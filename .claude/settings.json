@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/ -x --tb=short -q)",
+      "Bash(git push)",
+      "Bash(python -m pytest tests/ -v --tb=short)"
+    ]
+  }
+}

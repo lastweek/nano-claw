@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+exec python3 "$REPO_ROOT/src/secret_guard.py" --staged

@@ -1,0 +1,58 @@
+# Nano-Claw Configuration
+# This file is loaded by src/config.py
+# Environment variables can override these values
+
+llm:
+  provider: custom  # openai, azure, ollama, custom
+  model: your-model-name
+  base_url: https://api.example.com/v1
+  # context_window: 128000  # Optional: model context window size in tokens
+
+logging:
+  enabled: true
+  async_mode: false
+  log_dir: logs
+  buffer_size: 1
+
+agent:
+  max_iterations: 10
+
+ui:
+  enable_streaming: true
+  loading_indicator_interval: 0.8
+  live_activity_mode: simple
+  live_activity_details: collapsed
+
+context:
+  auto_compact: true
+  auto_compact_threshold: 0.85
+  target_usage_after_compaction: 0.60
+  min_recent_turns: 6
+
+subagents:
+  enabled: true
+  max_parallel: 3
+  max_per_turn: 6
+  default_timeout_seconds: 180
+
+plan:
+  enabled: true
+  plan_dir: .nano-claw/plans
+  allow_subagents: true
+
+# MCP (Model Context Protocol) Servers
+# External tool servers that nano-claw can connect to
+mcp:
+  servers:
+    - name: deepwiki
+      url: https://mcp.deepwiki.com/mcp  # DeepWiki MCP endpoint; do not append /tools
+      enabled: true
+      timeout: 30
+    - name: example-server
+      url: http://localhost:3000
+      enabled: false  # Disabled by default, enable when you have an MCP server running
+      timeout: 30
+    # Add more MCP servers here:
+    # - name: database
+    #   url: http://localhost:3001
+    #   enabled: true

@@ -1,0 +1,210 @@
+# Nano-Claw
+
+Nano-Claw is a terminal-first coding agent for working directly inside an existing repository. It combines an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and per-session logs so you can see exactly what happened during each turn.
+
+It is built for practical repo work rather than chat demos: inspect files, edit code, run commands, load focused instructions only when needed, hand off isolated subtasks, and keep long sessions usable with context compaction.
+
+## Why Nano-Claw
+
+- Work where the code already is: your shell, your repo, your files
+- Keep the agent observable with a live activity feed and structured logs
+- Extend behavior with local skills and MCP servers instead of giant prompts
+- Delegate parallel subtasks without mixing child work into the main context
+- Stay productive in longer sessions with context inspection and compaction
+
+## What You Get
+
+- Built-in tools for `read_file`, `write_file`, `run_command`, `load_skill`, and `run_subagent`
+- Streaming terminal UX with live activity updates while the model is thinking
+- Slash commands for tools, skills, MCP servers, plans, subagents, and context usage
+- Local `SKILL.md` bundles with discovery, pinning, and on-demand loading
+- MCP support so external tools appear beside built-in tools
+- Subagents with isolated contexts, nested logs, and bounded concurrency
+- Per-session logging under `logs/` with human-readable and structured outputs
+- Planning workflow via `/plan`
+- Automatic and manual context compaction for long-running sessions
+
+## Quickstart
+
+### 1. Install
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+git config core.hooksPath .githooks
+```
+
+The git hook path enables the local secret guard so obvious credentials do not get committed by accident.
+
+### 2. Configure
+
+```bash
+cp config.yaml.example config.yaml
+cp .env.example .env
+```
+
+`config.yaml` is the main project config. Use `.env` for secrets and machine-local overrides. Environment variables override values from `config.yaml`.
+
+Minimal OpenAI-compatible configuration:
+
+```yaml
+llm:
+  provider: custom
+  model: your-model-name
+  base_url: https://api.example.com/v1
+  api_key: your-api-key
+```
+
+You can also use `openai`, `azure`, or `ollama` provider modes.
+
+### 3. Run
+
+```bash
+python -m src.main
+```
+
+Alternative entrypoint:
+
+```bash
+python src/main.py
+```
+
+## What It Looks Like
+
+```text
+You > explain how the logging system works
+
+Agent >
+  • LLM call 1 requested 2 tools
+  • Tool finished: run_command(cmd='rg "SessionLogger" -n src') (0.03s)
+  • Tool finished: read_file(file_path='src/logger.py') (0.00s)
+  • LLM call 2 produced final answer
+
+Nano-Claw writes one session directory per CLI run, with session.json for
+metadata, llm.log for the execution timeline, and events.jsonl for structured
+events.
+
+1234 prompt tokens • 87 completion tokens • 2.14s • TTFT 0.61s • glm-5 (custom)
+```
+
+## Core Ideas
+
+### Tools
+
+Nano-Claw uses the same tool-calling loop for built-in tools and MCP-provided tools. The default repo-workflow set covers reading files, writing files, running shell commands, loading skills, and delegating child tasks.
+
+### Skills
+
+Skills are local instruction bundles stored in `SKILL.md`. Nano-Claw keeps a compact skill catalog in context and loads full skill bodies only when they are pinned, explicitly requested with `$skill-name`, or loaded through the `load_skill` tool.
+
+Discovery roots:
+
+- `.nano-claw/skills`
+- `~/.nano-claw/skills`
+
+### MCP
+
+MCP servers are configured in `config.yaml` and initialized at startup. Their tools are registered into the same tool system as built-in tools, so the model can use them through the same request loop and you can inspect them with `/mcp`.
+
+### Subagents
+
+Subagents let the main agent delegate isolated repo tasks to fresh child agents. They do not inherit the full conversation history, they write nested logs, and they run with bounded parallelism.
+
+### Context Compaction
+
+Long sessions can compact older turns into a rolling summary while keeping recent turns in raw form. You can inspect the current estimate with `/context` and manage compaction with `/compact`.
+
+### Logging
+
+Every CLI run gets a session directory under `logs/`:
+
+- `session.json` for session metadata and aggregate counts
+- `llm.log` for the full human-readable execution timeline
+- `events.jsonl` for the structured event stream
+- `artifacts/` for spilled large payloads
+- `subagents/` for nested child-agent logs
+
+Convenience symlinks are also maintained at `logs/latest-session` and `logs/latest.log`.
+
+## Common Commands
+
+- `/help` to list commands
+- `/tool` to inspect available tools
+- `/skill` to list, pin, clear, inspect, and reload skills
+- `/mcp` to inspect configured MCP servers and tools
+- `/context` to estimate the next-call baseline context payload
+- `/compact` to inspect or trigger compaction behavior
+- `/subagent` to inspect or run delegated child tasks
+- `/plan` to enter planning mode, draft a plan, and apply it
+
+Each command also supports built-in help such as `/command help`, `/command --help`, and `/command -h`.
+
+## Configuration
+
+Nano-Claw uses three configuration sources:
+
+- `config.yaml` for primary local configuration
+- `.env` for secrets and machine-local values
+- environment variables for explicit overrides
+
+Useful settings to know early:
+
+- `ui.enable_streaming`
+- `agent.max_iterations`
+- `logging.enabled`
+- `logging.async_mode`
+- `logging.log_dir`
+- `subagents.max_parallel`
+- `subagents.max_per_turn`
+- `context.auto_compact`
+- `plan.enabled`
+
+`logging.async_mode` routes session-log writes through a background transport while keeping the same on-disk log format. `subagents.max_parallel` caps concurrent child-agent threads independently from the per-turn delegation limit.
+
+Example MCP config:
+
+```yaml
+mcp:
+  servers:
+    - name: deepwiki
+      url: https://mcp.deepwiki.com/mcp
+      enabled: true
+      timeout: 30
+```
+
+See [config.yaml.example](config.yaml.example) for the full example file.
+
+## Documentation
+
+The front page stays focused on setup and concepts. Deeper implementation details live in `docs/`:
+
+- [docs/design-overview.md](docs/design-overview.md) for architecture and the main ReAct loop
+- [docs/subagents.md](docs/subagents.md) for delegated child-agent execution
+- [docs/skills.md](docs/skills.md) for skill discovery and loading
+- [docs/context-compaction.md](docs/context-compaction.md) for compaction strategy and lifecycle
+
+## Development
+
+Install dev dependencies and run tests:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Useful directories:
+
+```text
+src/                core CLI, agent, config, logging, commands, and built-in tools
+src/tools/          built-in tool implementations
+src/commands/       slash command implementations
+tests/              pytest suite
+docs/               technical documentation
+.githooks/          local secret guard hooks
+.nano-claw/skills/ optional repo-local skills
+```
+
+## License
+
+MIT
