@@ -1,8 +1,9 @@
-"""Shared utility functions for Nano-Claw."""
+"""Shared utility functions for nano-claw."""
 
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -76,3 +77,16 @@ def calculate_percentage(value: int, total: int | None) -> float | None:
     if total in (None, 0):
         return None
     return (value / total) * 100
+
+
+def utc_now() -> str:
+    """Return current UTC time as ISO8601 string.
+
+    Returns:
+        ISO8601 formatted timestamp string
+
+    Examples:
+        >>> utc_now()
+        '2025-03-05T12:34:56.789012'
+    """
+    return datetime.now().isoformat()

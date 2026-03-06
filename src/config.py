@@ -1,4 +1,4 @@
-"""Centralized configuration for Nano-Claw."""
+"""Centralized configuration for nano-claw."""
 
 from typing import Optional, List, Literal
 from pathlib import Path
@@ -146,6 +146,25 @@ class PlanConfig(BaseSettings):
     allow_subagents: bool = Field(default=True)
 
 
+class ServerConfig(BaseSettings):
+    """Local HTTP server configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="SERVER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    host: str = Field(default="127.0.0.1")
+    port: int = Field(default=8765, ge=1, le=65535)
+    db_path: str = Field(default=".nano-claw/state.db")
+    max_parallel_runs: int = Field(default=1, ge=1)
+    serve_ui: bool = Field(default=True)
+    sse_heartbeat_seconds: int = Field(default=10, ge=1)
+
+
 class MCPServerConfig(BaseSettings):
     """Configuration for a single MCP server."""
 
@@ -207,6 +226,7 @@ class Config:
         self.context = self._create_config(ContextConfig, config_dict.get("context", {}))
         self.subagents = self._create_config(SubagentConfig, config_dict.get("subagents", {}))
         self.plan = self._create_config(PlanConfig, config_dict.get("plan", {}))
+        self.server = self._create_config(ServerConfig, config_dict.get("server", {}))
         self.mcp = self._create_mcp_config(config_dict.get("mcp", {}))
 
         if self.context.target_usage_after_compaction >= self.context.auto_compact_threshold:

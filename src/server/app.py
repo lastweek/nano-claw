@@ -1,0 +1,70 @@
+"""FastAPI application factory for the local HTTP wrapper."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+
+from src.config import Config, config
+from src.server.admin_routes import router as admin_router
+from src.server.event_bus import TurnEventBus
+from src.server.routes import router
+from src.server.session_registry import SessionRegistry
+from src.server.session_resources import SessionResourcesFactory, build_session_resources
+from src.store.repository import AppStore
+from src.utils import resolve_path
+
+
+def create_app(
+    *,
+    runtime_config: Config | None = None,
+    repo_root: Path | None = None,
+    resources_factory: SessionResourcesFactory | None = None,
+) -> FastAPI:
+    """Create the local FastAPI app for one repo-root daemon instance."""
+    resolved_config = runtime_config or config
+    resolved_repo_root = resolve_path(repo_root or Path.cwd())
+    db_path = resolve_path(resolved_config.server.db_path, resolved_repo_root)
+
+    store = AppStore(db_path)
+    event_bus = TurnEventBus()
+    session_registry = SessionRegistry(
+        runtime_config=resolved_config,
+        repo_root=resolved_repo_root,
+        store=store,
+        event_bus=event_bus,
+        resources_factory=resources_factory or build_session_resources,
+    )
+    static_dir = Path(__file__).resolve().parent / "static"
+    admin_static_dir = Path(__file__).resolve().parent / "static_admin"
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Startup owns persisted state recovery; shutdown owns in-memory runtime cleanup.
+        store.init_db()
+        store.mark_incomplete_turns_failed()
+        yield
+        session_registry.close_all()
+
+    app = FastAPI(title="nano-claw HTTP", lifespan=lifespan)
+    app.state.runtime_config = resolved_config
+    app.state.repo_root = resolved_repo_root
+    app.state.store = store
+    app.state.event_bus = event_bus
+    app.state.session_registry = session_registry
+    app.state.static_dir = static_dir
+    app.state.admin_static_dir = admin_static_dir
+    app.state.started_at = datetime.now()
+    app.state.shutdown_requested = False
+    app.include_router(router)
+    app.include_router(admin_router)
+
+    if resolved_config.server.serve_ui:
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    app.mount("/admin/static", StaticFiles(directory=admin_static_dir), name="admin-static")
+
+    return app

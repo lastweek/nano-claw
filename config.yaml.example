@@ -23,6 +23,14 @@ ui:
   live_activity_mode: simple
   live_activity_details: collapsed
 
+server:
+  host: 127.0.0.1
+  port: 8765
+  db_path: .nano-claw/state.db
+  max_parallel_runs: 1
+  serve_ui: true
+  sse_heartbeat_seconds: 10
+
 context:
   auto_compact: true
   auto_compact_threshold: 0.85

@@ -1,4 +1,4 @@
-"""Main CLI entry point for Nano-Claw."""
+"""Main CLI entry point for nano-claw."""
 
 from dataclasses import dataclass
 import os
@@ -39,12 +39,14 @@ from src.utils import env_truthy
 
 REQUEST_TYPE_STREAMING = "streaming"
 REQUEST_TYPE_NON_STREAMING = "non-streaming"
-NANO_CODER_WORDMARK = r""" _   _                        ____          _
-| \ | | __ _ _ __   ___      / ___|___   __| | ___ _ __
-|  \| |/ _` | '_ \ / _ \____| |   / _ \ / _` |/ _ \ '__|
-| |\  | (_| | | | | (_) |____| |__| (_) | (_| |  __/ |
-|_| \_|\__,_|_| |_|\___/      \____\___/ \__,_|\___|_|
+NANO_CLAW_WORDMARK = r""" ____    ____  __  __          _   _
+|  _ \  / __||  \/  | __ _    | \ | |
+| | | || (__ | |\/| |/ _` |   |  \| |
+| |_| | \___|| |  | | (_| |   | |\  |
+|____/  |___/ |_|  |_|\__,_|   |_| \_|
 """
+# Backward-compatible alias used by older tests/docs.
+NANO_CODER_WORDMARK = NANO_CLAW_WORDMARK
 FIRE_CHARACTERS = " .,:;irsXA253hMHGS#9B&@"
 FIRE_COLORS = (
     "#3a281f",
@@ -61,7 +63,7 @@ FIRE_COLORS = (
 def _build_banner_panel(llm_info_lines: list[Text], *, fire_text: Text | None = None) -> Panel:
     """Build the startup banner panel, optionally with one fire frame."""
     renderables = [
-        Text(NANO_CODER_WORDMARK.rstrip("\n"), style="bold cyan"),
+        Text(NANO_CLAW_WORDMARK.rstrip("\n"), style="bold cyan"),
     ]
     if fire_text is not None:
         renderables.append(fire_text)
@@ -123,7 +125,7 @@ def _render_fire_frame(heat: list[list[float]], rng: random.Random) -> Text:
 
 def _animate_banner_fire(console: Console, llm_info_lines: list[Text]) -> None:
     """Show a brief original ASCII fire animation before the static banner."""
-    width = max(len(line) for line in NANO_CODER_WORDMARK.splitlines())
+    width = max(len(line) for line in NANO_CLAW_WORDMARK.splitlines())
     height = 6
     rng = random.Random()
     heat = [[0.0 for _ in range(width)] for _ in range(height)]
@@ -591,6 +593,7 @@ def run_repl(console: Console, runtime: AppRuntime) -> None:
 def main() -> None:
     """Main entry point."""
     load_dotenv()
+    argv = sys.argv[1:]
     skill_debug = env_truthy("SKILL_DEBUG")
     console = build_console()
     runtime_config = load_runtime_config(console)
@@ -602,6 +605,12 @@ def main() -> None:
     if provider_error:
         console.print(f"[red]Error: {provider_error}[/red]\n")
         sys.exit(1)
+
+    if argv and argv[0] == "serve":
+        from src.cli.serve import run_serve_command
+
+        run_serve_command(argv[1:], runtime_config)
+        return
 
     try:
         runtime = build_agent_runtime(
