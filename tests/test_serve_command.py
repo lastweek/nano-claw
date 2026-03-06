@@ -13,6 +13,7 @@ from src.cli.serve import (
     _GracefulUvicornServer,
     run_serve_command,
 )
+from src.store.db import DEFAULT_HTTP_DB_PATH
 
 
 def test_run_serve_command_prints_access_urls_and_paths(
@@ -25,9 +26,12 @@ def test_run_serve_command_prints_access_urls_and_paths(
     fake_app = object()
     config_calls = []
     server_runs = []
+    home_dir = temp_dir / "home"
+    home_dir.mkdir()
 
+    monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.chdir(temp_dir)
-    monkeypatch.setattr(http_runtime_config.server, "db_path", ".nano-claw/state.db")
+    monkeypatch.setattr(http_runtime_config.server, "db_path", DEFAULT_HTTP_DB_PATH)
     monkeypatch.setitem(
         sys.modules,
         "src.server.app",
@@ -61,7 +65,7 @@ def test_run_serve_command_prints_access_urls_and_paths(
     assert "Health: http://127.0.0.1:8765/api/v1/health" in output
     assert "Repo root:" in output
     assert temp_dir.name in output
-    assert f"DB path: {(temp_dir / '.nano-claw' / 'state.db').resolve()}" in output
+    assert f"DB path: {(home_dir / '.nano-claw' / 'state.db').resolve()}" in output
     assert config_calls == [
         (
             fake_app,

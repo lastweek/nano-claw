@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from src.store.db import DEFAULT_HTTP_DB_PATH
 from src.utils import env_truthy
 
 
@@ -45,7 +46,7 @@ class LoggingConfig(BaseSettings):
 
     enabled: bool = Field(default=True, alias="ENABLE_LOGGING")
     async_mode: bool = Field(default=False, alias="ASYNC_LOGGING")
-    log_dir: str = Field(default="logs", alias="LOG_DIR")
+    log_dir: str = Field(default="~/.nano-claw/sessions", alias="LOG_DIR")
     buffer_size: int = Field(default=10, ge=1, le=100)
 
 
@@ -146,6 +147,24 @@ class PlanConfig(BaseSettings):
     allow_subagents: bool = Field(default=True)
 
 
+class MemoryConfig(BaseSettings):
+    """File-backed session memory configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MEMORY_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    enabled: bool = Field(default=True)
+    root_dir: str = Field(default="~/.nano-claw/sessions")
+    auto_load_memory: bool = Field(default=True)
+    max_auto_chars: int = Field(default=4000, ge=1)
+    max_search_results: int = Field(default=10, ge=1)
+
+
 class ServerConfig(BaseSettings):
     """Local HTTP server configuration."""
 
@@ -159,7 +178,7 @@ class ServerConfig(BaseSettings):
 
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)
-    db_path: str = Field(default=".nano-claw/state.db")
+    db_path: str = Field(default=DEFAULT_HTTP_DB_PATH)
     max_parallel_runs: int = Field(default=1, ge=1)
     serve_ui: bool = Field(default=True)
     sse_heartbeat_seconds: int = Field(default=10, ge=1)
@@ -226,6 +245,7 @@ class Config:
         self.context = self._create_config(ContextConfig, config_dict.get("context", {}))
         self.subagents = self._create_config(SubagentConfig, config_dict.get("subagents", {}))
         self.plan = self._create_config(PlanConfig, config_dict.get("plan", {}))
+        self.memory = self._create_config(MemoryConfig, config_dict.get("memory", {}))
         self.server = self._create_config(ServerConfig, config_dict.get("server", {}))
         self.mcp = self._create_mcp_config(config_dict.get("mcp", {}))
 

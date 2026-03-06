@@ -463,6 +463,53 @@ body {
   color: var(--muted);
 }
 
+.tool-catalog-row {
+  align-items: stretch;
+}
+
+.tool-schema-preview {
+  margin-top: 8px;
+}
+
+.tool-schema-preview summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.tool-parameter-table {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.tool-parameter-head,
+.tool-parameter-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.1fr) minmax(80px, 0.8fr) minmax(70px, 0.6fr) minmax(180px, 1.5fr) minmax(120px, 1fr);
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.tool-parameter-head {
+  border-bottom: 1px solid var(--line);
+  background: rgba(242, 239, 231, 0.95);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tool-parameter-row + .tool-parameter-row {
+  border-top: 1px solid var(--line);
+}
+
+.tool-parameter-row code,
+.tool-parameter-row span {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .warning-list {
   display: flex;
   flex-direction: column;
@@ -523,6 +570,13 @@ pre {
 
   .detail-pane {
     grid-area: detail;
+  }
+}
+
+@media (max-width: 800px) {
+  .tool-parameter-head,
+  .tool-parameter-row {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -1,11 +1,29 @@
 """Tests for SessionLogger."""
 
 import json
+import re
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
 from src.logger import SessionLogger
+
+
+def _top_level_session_dirs(root: Path) -> list[Path]:
+    return sorted(
+        [
+            path
+            for path in Path(root).iterdir()
+            if not path.is_symlink() and path.is_dir() and (path / "session.json").exists()
+        ],
+        key=lambda path: path.name,
+    )
+
+
+def _top_level_session_dir(root: Path) -> Path:
+    session_dirs = _top_level_session_dirs(root)
+    assert len(session_dirs) == 1
+    return session_dirs[0]
 
 
 class TestSessionLogger:
@@ -27,7 +45,7 @@ class TestSessionLogger:
         logger = self._build_logger(temp_dir)
         logger.close()
 
-        assert list(Path(temp_dir).glob("session-*")) == []
+        assert _top_level_session_dirs(temp_dir) == []
         assert not (Path(temp_dir) / "latest-session").exists()
         assert not (Path(temp_dir) / "latest.log").exists()
 
@@ -38,9 +56,9 @@ class TestSessionLogger:
         logger.finish_turn(turn_id, "world", [], status="completed")
         logger.close()
 
-        session_dirs = list(Path(temp_dir).glob("session-*"))
-        assert len(session_dirs) == 1
-        session_dir = session_dirs[0]
+        session_dir = _top_level_session_dir(temp_dir)
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-session-[a-f0-9-]+", session_dir.name)
+        assert session_dir.name.endswith(f"-{logger.session_id}")
         assert (session_dir / "session.json").exists()
         assert (session_dir / "llm.log").exists()
         assert (session_dir / "events.jsonl").exists()
@@ -111,7 +129,7 @@ class TestSessionLogger:
         )
         logger.close()
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = _top_level_session_dir(temp_dir)
         llm_log = (session_dir / "llm.log").read_text()
         assert "STEP 0001 | SESSION START" in llm_log
         assert "STEP 0002 | TURN 0001 | TURN START" in llm_log
@@ -185,7 +203,7 @@ class TestSessionLogger:
         logger.finish_turn(turn_id, "done", [], status="error", error={"message": "boom"})
         logger.close(status="error")
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = _top_level_session_dir(temp_dir)
         events = [
             json.loads(line)
             for line in (session_dir / "events.jsonl").read_text().splitlines()
@@ -266,7 +284,7 @@ class TestSessionLogger:
         logger.finish_turn(turn_id, "done", [], status="completed")
         logger.close()
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = _top_level_session_dir(temp_dir)
         llm_log = (session_dir / "llm.log").read_text()
         assert "CONTEXT COMPACTION START" in llm_log
         assert "CONTEXT COMPACTION REQUEST" in llm_log
@@ -332,7 +350,7 @@ class TestSessionLogger:
         )
         logger.close()
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = _top_level_session_dir(temp_dir)
         llm_log = (session_dir / "llm.log").read_text()
         assert "PLAN START" in llm_log
         assert "PLAN REQUEST" in llm_log
@@ -365,7 +383,7 @@ class TestSessionLogger:
         )
         logger.close()
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = _top_level_session_dir(temp_dir)
         llm_log = (session_dir / "llm.log").read_text()
         assert "CONTEXT COMPACTION SKIPPED" in llm_log
         assert "\"reason\": \"not_enough_complete_turns\"" in llm_log
@@ -470,7 +488,7 @@ class TestSessionLogger:
         logger.finish_turn(turn_id, "hello", [], status="completed")
         logger.close()
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = _top_level_session_dir(temp_dir)
         llm_log = (session_dir / "llm.log").read_text()
         assert "LLM REQUEST" in llm_log
         assert "LLM RESPONSE" in llm_log

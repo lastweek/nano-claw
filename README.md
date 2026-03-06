@@ -134,15 +134,18 @@ Long sessions can compact older turns into a rolling summary while keeping recen
 
 ### Logging
 
-Every CLI run gets a session directory under `logs/`:
+Every CLI or HTTP session gets a readable session directory under `~/.nano-claw/sessions/` by default:
 
 - `session.json` for session metadata and aggregate counts
 - `llm.log` for the full human-readable execution timeline
 - `events.jsonl` for the structured event stream
 - `artifacts/` for spilled large payloads
+- `MEMORY.md` for curated session memory
+- `daily/` for append-only daily memory notes
+- `memory-settings.json` and `memory-audit.jsonl` for memory controls and audit events
 - `subagents/` for nested child-agent logs
 
-Convenience symlinks are also maintained at `logs/latest-session` and `logs/latest.log`.
+Convenience symlinks are also maintained at `~/.nano-claw/sessions/latest-session` and `~/.nano-claw/sessions/latest.log`.
 
 ## Common Commands
 
@@ -181,6 +184,8 @@ Useful settings to know early:
 - `plan.enabled`
 
 `logging.async_mode` routes session-log writes through a background transport while keeping the same on-disk log format. `subagents.max_parallel` caps concurrent child-agent threads independently from the per-turn delegation limit.
+By default, `server.db_path` points to `~/.nano-claw/state.db`.
+By default, `logging.log_dir` points to `~/.nano-claw/sessions`, and each session keeps its logs and memory files inside the same per-session directory.
 
 Example MCP config:
 
@@ -200,12 +205,14 @@ See [config.yaml.example](config.yaml.example) for the full example file.
 The optional HTTP wrapper is intentionally local and minimal:
 
 - One daemon process started inside one repo
-- One SQLite database for persisted sessions and turns
+- One machine-global SQLite database for persisted sessions and turns
 - One long-running main `Agent` per active session
 - One dedicated worker thread per session runtime
 - No auth, approvals, or multi-user features
 - SSE streaming for live output and turn status
 - Tiny static UI served from the same process
+
+By default the HTTP runtime stores state in `~/.nano-claw/state.db`, shared across repos on the same machine. On first startup with the default paths, nano-claw also moves an existing repo-local `.nano-claw/state.db`, `logs/`, and `.nano-claw/memory/` there when the corresponding global targets are still empty.
 
 Key endpoints:
 

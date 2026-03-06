@@ -8,7 +8,7 @@ from types import FrameType
 from typing import Any
 
 from src.config import Config
-from src.utils import resolve_path
+from src.store.db import resolve_http_db_path
 
 SERVE_TIMEOUT_KEEP_ALIVE_SECONDS = 1
 SERVE_TIMEOUT_GRACEFUL_SHUTDOWN_SECONDS = 2
@@ -77,7 +77,7 @@ def run_serve_command(args: list[str], runtime_config: Config) -> None:
     host = parsed.host or runtime_config.server.host
     port = parsed.port or runtime_config.server.port
     repo_root = Path.cwd()
-    db_path = resolve_path(runtime_config.server.db_path, repo_root)
+    db_path = resolve_http_db_path(runtime_config.server.db_path, repo_root)
 
     print(f"HTTP server: http://{host}:{port}")
     print(f"Chat UI: http://{host}:{port}/")

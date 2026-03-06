@@ -2,6 +2,7 @@
 
 from src.commands.context_cmds import register_context_commands
 from src.commands.help_cmds import register_help_commands
+from src.commands.memory_cmds import register_memory_commands
 from src.commands.mcp_cmds import register_mcp_commands
 from src.commands.plan_cmds import register_plan_commands
 from src.commands.skill_cmds import register_skill_commands
@@ -12,6 +13,7 @@ def register_all(registry) -> None:
     """Register all built-in slash commands."""
     register_help_commands(registry)
     register_context_commands(registry)
+    register_memory_commands(registry)
     register_subagent_commands(registry)
     register_plan_commands(registry)
     register_mcp_commands(registry)

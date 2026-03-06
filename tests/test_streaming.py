@@ -1,7 +1,6 @@
 """Test streaming functionality."""
 
 import json
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.agent import Agent
@@ -64,7 +63,8 @@ class TestStreaming:
         logger.finish_turn(turn_id, "Hi there", [], status="completed")
         logger.close()
 
-        session_dir = next(Path(temp_dir).glob("session-*"))
+        session_dir = logger.session_dir
+        assert session_dir is not None
         llm_log = (session_dir / "llm.log").read_text()
         assert llm_log.count("LLM REQUEST") == 1
         assert llm_log.count("LLM RESPONSE") == 1

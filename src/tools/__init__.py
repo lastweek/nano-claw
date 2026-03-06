@@ -113,6 +113,7 @@ def build_tool_registry(
     skill_manager,
     mcp_manager=None,
     subagent_manager=None,
+    memory_store=None,
     include_subagent_tool: bool = True,
     tool_profile: ToolProfile = ToolProfile.BUILD,
     runtime_config=None,
@@ -125,6 +126,7 @@ def build_tool_registry(
     from src.tools.read import ReadTool
     from src.tools.readonly_shell import ReadOnlyShellTool
     from src.tools.skill import LoadSkillTool
+    from src.tools.memory import MemoryReadTool, MemorySearchTool, MemoryWriteTool
     from src.tools.subagent import RunSubagentTool
     from src.tools.write import WriteTool
 
@@ -136,6 +138,10 @@ def build_tool_registry(
     if tool_profile == ToolProfile.BUILD:
         registry.register(WriteTool())
         registry.register(BashTool())
+        if memory_store is not None and runtime_config.memory.enabled:
+            registry.register(MemoryReadTool(memory_store))
+            registry.register(MemorySearchTool(memory_store))
+            registry.register(MemoryWriteTool(memory_store))
         if mcp_manager is not None:
             mcp_manager.register_tools(registry)
         if include_subagent_tool and subagent_manager is not None and runtime_config.subagents.enabled:

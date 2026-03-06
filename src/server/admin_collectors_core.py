@@ -143,7 +143,18 @@ def collect_turn_detail(app: FastAPI, turn_id: str, *, redacted: bool = True) ->
     turn = app.state.store.get_turn(turn_id)
     if turn is None:
         return None
-    return _build_turn_resource(turn, redacted=redacted)
+    injected_entry_ids: list[str] = []
+    memory_store = getattr(app.state, "memory_store", None)
+    if memory_store is not None and memory_store.is_enabled():
+        injected_entry_ids = [
+            *[
+                entry_id
+                for event in memory_store.read_audit_log(turn.session_id)
+                if event.get("event") == "prompt_injection" and event.get("turn_id") == turn_id
+                for entry_id in event.get("entry_ids", [])
+            ],
+        ]
+    return _build_turn_resource(turn, redacted=redacted, injected_entry_ids=injected_entry_ids)
 
 
 def collect_event_bus_state(app: FastAPI) -> dict[str, Any]:
@@ -178,6 +189,7 @@ def collect_config_view(app: FastAPI) -> dict[str, Any]:
         "subagents": runtime_config.subagents.model_dump(),
         "plan": runtime_config.plan.model_dump(),
         "server": runtime_config.server.model_dump(),
+        "memory": runtime_config.memory.model_dump(),
         "mcp": runtime_config.mcp.model_dump(),
     }
     sanitized = redact_config_object(config_payload)
@@ -189,7 +201,297 @@ def collect_config_view(app: FastAPI) -> dict[str, Any]:
     )
 
 
-def _build_turn_resource(turn: TurnRecord, *, redacted: bool) -> dict[str, Any]:
+def collect_memory_workspace(app: FastAPI, session_id: str) -> dict[str, Any] | None:
+    """Collect one file-backed memory workspace resource."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_resource(
+            kind="SessionMemoryWorkspace",
+            name=session_id,
+            spec={"session_id": session_id},
+            status={"phase": "Disabled"},
+            metadata_extra={"sessionId": session_id},
+        )
+
+    workspace = memory_store.describe_workspace(session_id)
+    return build_resource(
+        kind="SessionMemoryWorkspace",
+        name=session_id,
+        spec={
+            "session_id": session_id,
+            "root_dir": workspace["root_dir"],
+            "document_path": workspace["document_path"],
+            "settings_path": workspace["settings_path"],
+            "audit_path": workspace["audit_path"],
+        },
+        status={
+            "phase": "Ready",
+            "mode": workspace["settings"]["mode"],
+            "entry_count": workspace["entry_count"],
+            "section_counts": workspace["section_counts"],
+            "status_counts": workspace["status_counts"],
+            "daily_files": list(workspace["daily_files"]),
+            "daily_file_count": len(workspace["daily_files"]),
+        },
+        metadata_extra={"sessionId": session_id},
+    )
+
+
+def collect_memory_document(app: FastAPI, session_id: str) -> dict[str, Any] | None:
+    """Collect one curated memory document resource."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_resource(
+            kind="SessionMemoryDocument",
+            name=f"{session_id}-memory",
+            spec={"session_id": session_id, "path": None},
+            status={"phase": "Disabled", "content": ""},
+            metadata_extra={"sessionId": session_id},
+        )
+
+    path = memory_store.curated_document_path(session_id)
+    content = memory_store.read_curated_document(session_id)
+    return build_resource(
+        kind="SessionMemoryDocument",
+        name=f"{session_id}-memory",
+        spec={
+            "session_id": session_id,
+            "path": str(path),
+        },
+        status={
+            "phase": "Ready",
+            "content": content,
+            "content_preview": preview_text(content, redacted=False),
+        },
+        metadata_extra={"sessionId": session_id},
+    )
+
+
+def collect_memory_entries(app: FastAPI, session_id: str) -> dict[str, Any] | None:
+    """Collect one list of structured curated memory entries."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_list_resource(kind="SessionMemoryEntry", items=[], count=0)
+
+    items = [
+        build_resource(
+            kind="SessionMemoryEntry",
+            name=entry.entry_id,
+            spec={
+                "session_id": session_id,
+                "kind": entry.kind,
+                "title": entry.title,
+                "source": entry.source,
+                "created_at": entry.created_at,
+                "updated_at": entry.updated_at,
+                "last_verified_at": entry.last_verified_at,
+                "supersedes": entry.supersedes,
+            },
+            status={
+                "phase": entry.status.title(),
+                "status": entry.status,
+                "confidence": entry.confidence,
+                "content": entry.content,
+                "content_preview": preview_text(entry.content, redacted=False),
+            },
+            metadata_extra={"sessionId": session_id},
+        )
+        for entry in memory_store.list_entries(session_id, include_inactive=True)
+    ]
+    return build_list_resource(kind="SessionMemoryEntry", items=items, count=len(items))
+
+
+def collect_memory_entry(app: FastAPI, session_id: str, entry_id: str) -> dict[str, Any] | None:
+    """Collect one structured curated memory entry."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_resource(
+            kind="SessionMemoryEntry",
+            name=entry_id,
+            spec={"session_id": session_id},
+            status={"phase": "Disabled"},
+            metadata_extra={"sessionId": session_id},
+        )
+    entry = memory_store.get_entry(session_id, entry_id)
+    if entry is None:
+        return None
+    return build_resource(
+        kind="SessionMemoryEntry",
+        name=entry.entry_id,
+        spec={
+            "session_id": session_id,
+            "kind": entry.kind,
+            "title": entry.title,
+            "source": entry.source,
+            "created_at": entry.created_at,
+            "updated_at": entry.updated_at,
+            "last_verified_at": entry.last_verified_at,
+            "supersedes": entry.supersedes,
+        },
+        status={
+            "phase": entry.status.title(),
+            "status": entry.status,
+            "confidence": entry.confidence,
+            "content": entry.content,
+            "content_preview": preview_text(entry.content, redacted=False),
+        },
+        metadata_extra={"sessionId": session_id},
+    )
+
+
+def collect_memory_settings(app: FastAPI, session_id: str) -> dict[str, Any] | None:
+    """Collect one session memory settings resource."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_resource(
+            kind="SessionMemorySettings",
+            name=session_id,
+            spec={"session_id": session_id},
+            status={"phase": "Disabled"},
+            metadata_extra={"sessionId": session_id},
+        )
+    settings = memory_store.get_settings(session_id)
+    return build_resource(
+        kind="SessionMemorySettings",
+        name=session_id,
+        spec={
+            "session_id": session_id,
+            "path": str(memory_store.settings_path(session_id)),
+        },
+        status={
+            "phase": "Ready",
+            "mode": settings.mode,
+            "auto_retrieve_enabled": settings.auto_retrieve_enabled,
+            "manual_write_enabled": settings.manual_write_enabled,
+            "autonomous_write_enabled": settings.autonomous_write_enabled,
+        },
+        metadata_extra={"sessionId": session_id},
+    )
+
+
+def collect_memory_audit(app: FastAPI, session_id: str, *, limit: int = 100) -> dict[str, Any] | None:
+    """Collect recent session memory audit events."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_list_resource(kind="SessionMemoryAuditEvent", items=[], count=0)
+    events = memory_store.read_audit_log(session_id, limit=limit)
+    items = [
+        build_resource(
+            kind="SessionMemoryAuditEvent",
+            name=f"{session_id}-{index}",
+            spec={
+                "session_id": session_id,
+                "timestamp": event.get("timestamp"),
+                "event": event.get("event"),
+            },
+            status={
+                "phase": "Ready",
+                "payload": {
+                    key: value
+                    for key, value in event.items()
+                    if key not in {"timestamp", "session_id", "event"}
+                },
+            },
+            metadata_extra={"sessionId": session_id},
+        )
+        for index, event in enumerate(events, start=1)
+    ]
+    return build_list_resource(kind="SessionMemoryAuditEvent", items=items, count=len(items))
+
+
+def collect_memory_daily_logs(app: FastAPI, session_id: str) -> dict[str, Any] | None:
+    """Collect the list of daily memory log files for one session."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_list_resource(kind="SessionMemoryDailyLog", items=[], count=0)
+
+    items = [
+        build_resource(
+            kind="SessionMemoryDailyLog",
+            name=f"{session_id}-{date}",
+            spec={
+                "session_id": session_id,
+                "date": date,
+                "path": str(memory_store.daily_log_path(session_id, date)),
+            },
+            status={"phase": "Ready"},
+            metadata_extra={"sessionId": session_id, "date": date},
+        )
+        for date in memory_store.list_daily_logs(session_id)
+    ]
+    return build_list_resource(kind="SessionMemoryDailyLog", items=items, count=len(items))
+
+
+def collect_memory_daily_log(app: FastAPI, session_id: str, date: str) -> dict[str, Any] | None:
+    """Collect one daily memory log resource."""
+    session = app.state.store.get_session_record(session_id)
+    if session is None:
+        return None
+
+    memory_store = app.state.memory_store
+    if not memory_store.is_enabled():
+        return build_resource(
+            kind="SessionMemoryDailyLog",
+            name=f"{session_id}-{date}",
+            spec={"session_id": session_id, "date": date, "path": None},
+            status={"phase": "Disabled", "content": ""},
+            metadata_extra={"sessionId": session_id, "date": date},
+        )
+
+    try:
+        path = memory_store.daily_log_path(session_id, date)
+        content = memory_store.read_daily_log(session_id, date)
+    except (FileNotFoundError, ValueError):
+        return None
+
+    return build_resource(
+        kind="SessionMemoryDailyLog",
+        name=f"{session_id}-{date}",
+        spec={
+            "session_id": session_id,
+            "date": date,
+            "path": str(path),
+        },
+        status={
+            "phase": "Ready",
+            "content": content,
+            "content_preview": preview_text(content, redacted=False),
+        },
+        metadata_extra={"sessionId": session_id, "date": date},
+    )
+
+
+def _build_turn_resource(
+    turn: TurnRecord,
+    *,
+    redacted: bool,
+    injected_entry_ids: list[str] | None = None,
+) -> dict[str, Any]:
     turn_phase = {
         "queued": "Queued",
         "running": "Running",
@@ -212,6 +514,7 @@ def _build_turn_resource(turn: TurnRecord, *, redacted: bool) -> dict[str, Any]:
             "final_output": preview_text(turn.final_output, redacted=redacted),
             "error_text": preview_text(turn.error_text, redacted=redacted),
             "updated_at": turn.updated_at,
+            "memory_injected_entry_ids": list(injected_entry_ids or []),
         },
         metadata_extra={"sessionId": turn.session_id},
     )

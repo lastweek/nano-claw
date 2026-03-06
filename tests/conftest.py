@@ -59,7 +59,7 @@ def http_runtime_config(temp_dir, monkeypatch):
     for env_name in list(os.environ.keys()):
         if env_name.startswith(("LLM_", "SERVER_", "ENABLE_LOGGING", "ASYNC_LOGGING", "LOG_DIR")):
             monkeypatch.delenv(env_name, raising=False)
-    return Config(
+    runtime_config = Config(
         {
             "llm": {
                 "provider": "ollama",
@@ -69,7 +69,7 @@ def http_runtime_config(temp_dir, monkeypatch):
             "logging": {
                 "enabled": True,
                 "async_mode": False,
-                "log_dir": str(temp_dir / "logs"),
+                "log_dir": str(temp_dir / "sessions"),
                 "buffer_size": 1,
             },
             "server": {
@@ -80,9 +80,20 @@ def http_runtime_config(temp_dir, monkeypatch):
                 "serve_ui": True,
                 "sse_heartbeat_seconds": 1,
             },
+            "memory": {
+                "enabled": False,
+                "root_dir": str(temp_dir / "sessions"),
+                "auto_load_memory": True,
+                "max_auto_chars": 4000,
+                "max_search_results": 10,
+            },
             "mcp": {"servers": []},
         }
     )
+    runtime_config.logging.log_dir = str(temp_dir / "sessions")
+    runtime_config.server.db_path = str(temp_dir / "state.db")
+    runtime_config.memory.root_dir = str(temp_dir / "sessions")
+    return runtime_config
 
 
 class FakeLogger:
@@ -153,7 +164,7 @@ class FakeAgent:
 def patch_http_runtime(monkeypatch, temp_dir):
     """Patch HTTP runtime creation with deterministic fake runtime."""
 
-    def _fake_build_session_resources(session_id, runtime_config, repo_root, store):
+    def _fake_build_session_resources(session_id, runtime_config, repo_root, store, memory_store=None):
         session_snapshot = store.get_session_snapshot(session_id)
         if session_snapshot is None:
             raise KeyError(f"Unknown session: {session_id}")
@@ -167,13 +178,14 @@ def patch_http_runtime(monkeypatch, temp_dir):
         context.active_skills = []
         context.session_mode = "build"
 
-        logger = FakeLogger(temp_dir / "logs", session_id)
+        logger = FakeLogger(temp_dir / "sessions", session_id)
         agent = FakeAgent(context)
         return http_session_resources.SessionResources(
             agent=agent,
             context=context,
             logger=logger,
             mcp_manager=None,
+            memory_store=memory_store,
         )
 
     monkeypatch.setattr(

@@ -559,9 +559,9 @@ Priority order (highest to lowest):
 The subagent system creates a hierarchical logging structure:
 
 ```
-logs/
-  latest-session -> session-abc123/          # Parent symlink
-  session-abc123/                            # Parent session
+~/.nano-claw/sessions/
+  latest-session -> 2026-03-06-debug-sess_ab12cd34ef56/   # Parent symlink
+  2026-03-06-debug-sess_ab12cd34ef56/                     # Parent session
     session.json                             # Parent metadata
     llm.log                                  # Parent LLM log
     events.jsonl                             # Parent events

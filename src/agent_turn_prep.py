@@ -23,19 +23,40 @@ class PreparedTurnInput:
     normalized_user_message: str
     preload_skill_names: list[str]
     pending_skill_events: list[PendingSkillEvent]
+    memory_note: str | None = None
+    memory_entry_ids: list[str] | None = None
 
 
-def prepare_turn_input(user_message: str, *, context, skill_manager) -> PreparedTurnInput:
+def prepare_turn_input(
+    user_message: str,
+    *,
+    context,
+    skill_manager,
+    memory_store=None,
+    runtime_config=None,
+) -> PreparedTurnInput:
     """Normalize a user message and collect skill preloads for the turn."""
     pending_skill_events: list[PendingSkillEvent] = []
     normalized_user_message = user_message
     preload_skill_names: list[str] = []
+    memory_note: str | None = None
+    memory_entry_ids: list[str] | None = None
 
     if skill_manager is None:
+        if memory_store is not None and runtime_config is not None:
+            selection = memory_store.build_auto_memory_note(
+                context.session_id,
+                normalized_user_message,
+            )
+            if selection is not None:
+                memory_note = selection.note
+                memory_entry_ids = [entry.entry_id for entry in selection.entries]
         return PreparedTurnInput(
             normalized_user_message=normalized_user_message,
             preload_skill_names=preload_skill_names,
             pending_skill_events=pending_skill_events,
+            memory_note=memory_note,
+            memory_entry_ids=memory_entry_ids,
         )
 
     pinned_skill_names = [
@@ -99,10 +120,21 @@ def prepare_turn_input(user_message: str, *, context, skill_manager) -> Prepared
             )
         )
 
+    if memory_store is not None and runtime_config is not None:
+        selection = memory_store.build_auto_memory_note(
+            context.session_id,
+            normalized_user_message,
+        )
+        if selection is not None:
+            memory_note = selection.note
+            memory_entry_ids = [entry.entry_id for entry in selection.entries]
+
     return PreparedTurnInput(
         normalized_user_message=normalized_user_message,
         preload_skill_names=preload_skill_names,
         pending_skill_events=pending_skill_events,
+        memory_note=memory_note,
+        memory_entry_ids=memory_entry_ids,
     )
 
 
@@ -110,6 +142,7 @@ def build_conversation_messages(
     *,
     system_message: ChatMessage,
     summary_message: ChatMessage | None,
+    memory_note: str | None,
     history_messages: list[ChatMessage],
     skill_manager,
     preload_skill_names: list[str],
@@ -121,6 +154,9 @@ def build_conversation_messages(
 
     if summary_message is not None:
         messages.append(summary_message)
+
+    if memory_note:
+        messages.append({"role": "system", "content": memory_note})
 
     messages.extend(history_messages)
 

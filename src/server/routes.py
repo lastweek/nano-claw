@@ -5,15 +5,30 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.server.schemas import (
     CloseSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
+    DailyMemoryAppendRequest,
+    DailyMemoryFileResponse,
+    DailyMemoryListResponse,
+    DailyMemorySummaryResponse,
     CreateTurnRequest,
     CreateTurnResponse,
+    MemoryEntryCreateRequest,
+    MemoryEntryListResponse,
+    MemoryEntryResponse,
+    MemoryEntryUpdateRequest,
+    MemoryDocumentRequest,
+    MemoryDocumentResponse,
+    MemorySearchHitResponse,
+    MemorySearchResponse,
+    MemorySettingsResponse,
+    MemorySettingsUpdateRequest,
+    MemoryWorkspaceResponse,
     SessionDetailResponse,
     SessionMessageResponse,
     SessionSummaryResponse,
@@ -34,6 +49,10 @@ def _get_store(request: Request) -> AppStore:
 
 def _get_registry(request: Request) -> SessionRegistry:
     return request.app.state.session_registry
+
+
+def _get_memory_store(request: Request):
+    return request.app.state.memory_store
 
 
 def _format_sse(event_name: str, payload: dict) -> str:
@@ -78,6 +97,52 @@ def _require_turn(request: Request, turn_id: str) -> TurnRecord:
     return turn
 
 
+def _require_session_record(request: Request, session_id: str):
+    session = _get_store(request).get_session_record(session_id)
+    if session is None:
+        raise KeyError(f"Unknown session: {session_id}")
+    return session
+
+
+def _require_memory_enabled(request: Request):
+    memory_store = _get_memory_store(request)
+    if not memory_store.is_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session memory is disabled.",
+        )
+    return memory_store
+
+
+def _serialize_memory_entry(session_id: str, entry) -> MemoryEntryResponse:
+    return MemoryEntryResponse(
+        id=entry.entry_id,
+        session_id=session_id,
+        kind=entry.kind,
+        title=entry.title,
+        content=entry.content,
+        source=entry.source,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+        confidence=entry.confidence,
+        last_verified_at=entry.last_verified_at,
+        status=entry.status,
+        supersedes=entry.supersedes,
+    )
+
+
+def _serialize_memory_settings(session_id: str, memory_store) -> MemorySettingsResponse:
+    settings = memory_store.get_settings(session_id)
+    return MemorySettingsResponse(
+        session_id=session_id,
+        mode=settings.mode,
+        auto_retrieve_enabled=settings.auto_retrieve_enabled,
+        manual_write_enabled=settings.manual_write_enabled,
+        autonomous_write_enabled=settings.autonomous_write_enabled,
+        path=str(memory_store.settings_path(session_id)),
+    )
+
+
 @router.get("/", include_in_schema=False)
 def root(request: Request):
     """Serve static UI from this process when enabled."""
@@ -116,6 +181,10 @@ def create_session(request: Request, payload: CreateSessionRequest) -> CreateSes
     except Exception as exc:
         try:
             store.delete_session_record(session.id)
+        except Exception:
+            pass
+        try:
+            _get_memory_store(request).delete_session_memory(session.id)
         except Exception:
             pass
         raise HTTPException(
@@ -179,12 +248,14 @@ def delete_session(request: Request, session_id: str) -> CloseSessionResponse:
     """Close a session and release its runtime resources."""
     store = _get_store(request)
     registry = _get_registry(request)
+    memory_store = _get_memory_store(request)
     session = store.get_session_record(session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown session: {session_id}")
 
     closed = store.close_session(session_id)
     registry.close_runtime(session_id)
+    memory_store.delete_session_memory(session_id)
     return CloseSessionResponse(
         id=closed.id,
         state=closed.state,
@@ -248,6 +319,405 @@ def get_turn(request: Request, turn_id: str) -> TurnDetailResponse:
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return TurnDetailResponse(**turn.__dict__)
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory",
+    response_model=MemoryWorkspaceResponse,
+)
+def get_session_memory_workspace(request: Request, session_id: str) -> MemoryWorkspaceResponse:
+    """Return one session's memory workspace summary."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    summary = memory_store.describe_workspace(session_id)
+    return MemoryWorkspaceResponse(
+        session_id=session_id,
+        root_dir=summary["root_dir"],
+        document_path=summary["document_path"],
+        settings_path=summary["settings_path"],
+        audit_path=summary["audit_path"],
+        entry_count=summary["entry_count"],
+        daily_files=list(summary["daily_files"]),
+        settings_mode=summary["settings"]["mode"],
+    )
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory/document",
+    response_model=MemoryDocumentResponse,
+)
+def get_session_memory_document(request: Request, session_id: str) -> MemoryDocumentResponse:
+    """Return the raw curated memory document for one session."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    path = memory_store.curated_document_path(session_id)
+    content = memory_store.read_curated_document(session_id)
+    return MemoryDocumentResponse(
+        session_id=session_id,
+        path=str(path),
+        content=content,
+    )
+
+
+@router.put(
+    "/api/v1/sessions/{session_id}/memory/document",
+    response_model=MemoryDocumentResponse,
+)
+def put_session_memory_document(
+    request: Request,
+    session_id: str,
+    payload: MemoryDocumentRequest,
+) -> MemoryDocumentResponse:
+    """Replace the raw curated memory document for one active session."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        session = _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if session.state != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
+
+    path = memory_store.write_curated_document(session_id, payload.content)
+    return MemoryDocumentResponse(
+        session_id=session_id,
+        path=str(path),
+        content=memory_store.read_curated_document(session_id),
+    )
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory/entries",
+    response_model=MemoryEntryListResponse,
+)
+def list_session_memory_entries(
+    request: Request,
+    session_id: str,
+    kind: str | None = None,
+    entry_status: str | None = Query(default=None, alias="status"),
+    q: str | None = None,
+    include_inactive: bool = True,
+) -> MemoryEntryListResponse:
+    """List structured curated memory entries for one session."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+        entries = memory_store.list_entries(
+            session_id,
+            kind=kind,
+            status=entry_status,
+            query=q,
+            include_inactive=include_inactive,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return MemoryEntryListResponse(
+        session_id=session_id,
+        entries=[_serialize_memory_entry(session_id, entry) for entry in entries],
+    )
+
+
+@router.post(
+    "/api/v1/sessions/{session_id}/memory/entries",
+    response_model=MemoryEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_session_memory_entry(
+    request: Request,
+    session_id: str,
+    payload: MemoryEntryCreateRequest,
+) -> MemoryEntryResponse:
+    """Create or upsert one curated memory entry."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        session = _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if session.state != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
+
+    try:
+        entry = memory_store.upsert_curated_entry(
+            session_id,
+            kind=payload.kind,
+            title=payload.title,
+            content=payload.content,
+            reason=payload.reason,
+            source=payload.source or "http_api",
+            confidence=payload.confidence,
+            last_verified_at=payload.last_verified_at,
+            actor="manual",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _serialize_memory_entry(session_id, entry)
+
+
+@router.patch(
+    "/api/v1/sessions/{session_id}/memory/entries/{entry_id}",
+    response_model=MemoryEntryResponse,
+)
+def patch_session_memory_entry(
+    request: Request,
+    session_id: str,
+    entry_id: str,
+    payload: MemoryEntryUpdateRequest,
+) -> MemoryEntryResponse:
+    """Update lifecycle or content for one curated memory entry."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        session = _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if session.state != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
+
+    try:
+        if payload.action == "update":
+            entry = memory_store.update_curated_entry(
+                session_id,
+                entry_id,
+                title=payload.title,
+                content=payload.content,
+                confidence=payload.confidence,
+                source=payload.source or "http_api",
+                last_verified_at=payload.last_verified_at,
+                reason=payload.reason,
+                actor="manual",
+            )
+        elif payload.action == "archive":
+            entry = memory_store.archive_curated_entry(
+                session_id,
+                entry_id,
+                reason=payload.reason,
+                actor="manual",
+            )
+        elif payload.action == "supersede":
+            if payload.content is None:
+                raise ValueError("content is required for supersede")
+            entry = memory_store.supersede_curated_entry(
+                session_id,
+                entry_id,
+                title=payload.title,
+                content=payload.content,
+                reason=payload.reason,
+                source=payload.source or "http_api",
+                confidence=payload.confidence,
+                last_verified_at=payload.last_verified_at,
+                actor="manual",
+            )
+        else:
+            raise ValueError("action must be one of: update, archive, supersede")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _serialize_memory_entry(session_id, entry)
+
+
+@router.delete("/api/v1/sessions/{session_id}/memory/entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session_memory_entry(request: Request, session_id: str, entry_id: str) -> None:
+    """Delete one curated memory entry."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        session = _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if session.state != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
+
+    try:
+        memory_store.delete_curated_entry(
+            session_id,
+            entry_id=entry_id,
+            reason="http_api delete",
+            actor="manual",
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory/settings",
+    response_model=MemorySettingsResponse,
+)
+def get_session_memory_settings(request: Request, session_id: str) -> MemorySettingsResponse:
+    """Return one session's memory mode settings."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return _serialize_memory_settings(session_id, memory_store)
+
+
+@router.patch(
+    "/api/v1/sessions/{session_id}/memory/settings",
+    response_model=MemorySettingsResponse,
+)
+def patch_session_memory_settings(
+    request: Request,
+    session_id: str,
+    payload: MemorySettingsUpdateRequest,
+) -> MemorySettingsResponse:
+    """Update the current session memory mode."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        session = _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if session.state != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
+    try:
+        memory_store.update_settings(session_id, mode=payload.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _serialize_memory_settings(session_id, memory_store)
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory/daily",
+    response_model=DailyMemoryListResponse,
+)
+def get_session_memory_daily_logs(request: Request, session_id: str) -> DailyMemoryListResponse:
+    """List daily memory files for one session."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    files = [
+        DailyMemorySummaryResponse(
+            date=date,
+            path=str(memory_store.daily_log_path(session_id, date)),
+        )
+        for date in memory_store.list_daily_logs(session_id)
+    ]
+    return DailyMemoryListResponse(session_id=session_id, files=files)
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory/daily/{date}",
+    response_model=DailyMemoryFileResponse,
+)
+def get_session_memory_daily_log(
+    request: Request,
+    session_id: str,
+    date: str,
+) -> DailyMemoryFileResponse:
+    """Return one daily memory file."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    try:
+        path = memory_store.daily_log_path(session_id, date)
+        content = memory_store.read_daily_log(session_id, date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return DailyMemoryFileResponse(
+        session_id=session_id,
+        date=date,
+        path=str(path),
+        content=content,
+    )
+
+
+@router.post(
+    "/api/v1/sessions/{session_id}/memory/daily/{date}",
+    response_model=DailyMemoryFileResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_session_memory_daily_log(
+    request: Request,
+    session_id: str,
+    date: str,
+    payload: DailyMemoryAppendRequest,
+) -> DailyMemoryFileResponse:
+    """Append one entry to the selected daily memory file."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        session = _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if session.state != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
+
+    try:
+        path = memory_store.append_daily_log(
+            session_id,
+            title=payload.title,
+            content=payload.content,
+            date=date,
+        )
+        content = memory_store.read_daily_log(session_id, date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return DailyMemoryFileResponse(
+        session_id=session_id,
+        date=date,
+        path=str(path),
+        content=content,
+    )
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/memory/search",
+    response_model=MemorySearchResponse,
+)
+def search_session_memory(
+    request: Request,
+    session_id: str,
+    q: str,
+    limit: int | None = None,
+    include_daily: bool = True,
+    include_inactive: bool = False,
+) -> MemorySearchResponse:
+    """Search curated memory and optional daily logs for one session."""
+    memory_store = _require_memory_enabled(request)
+    try:
+        _require_session_record(request, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    try:
+        hits = memory_store.search(
+            session_id,
+            query=q,
+            limit=limit,
+            include_daily=include_daily,
+            include_inactive=include_inactive,
+            actor="http_api",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return MemorySearchResponse(
+        session_id=session_id,
+        query=q,
+        hits=[MemorySearchHitResponse(**hit.__dict__) for hit in hits],
+    )
 
 
 @router.get("/api/v1/turns/{turn_id}/stream")

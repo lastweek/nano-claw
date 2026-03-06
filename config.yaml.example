@@ -11,7 +11,7 @@ llm:
 logging:
   enabled: true
   async_mode: false
-  log_dir: logs
+  log_dir: ~/.nano-claw/sessions
   buffer_size: 1
 
 agent:
@@ -26,7 +26,7 @@ ui:
 server:
   host: 127.0.0.1
   port: 8765
-  db_path: .nano-claw/state.db
+  db_path: ~/.nano-claw/state.db
   max_parallel_runs: 1
   serve_ui: true
   sse_heartbeat_seconds: 10
@@ -47,6 +47,13 @@ plan:
   enabled: true
   plan_dir: .nano-claw/plans
   allow_subagents: true
+
+memory:
+  enabled: true
+  root_dir: ~/.nano-claw/sessions
+  auto_load_memory: true
+  max_auto_chars: 4000
+  max_search_results: 10
 
 # MCP (Model Context Protocol) Servers
 # External tool servers that nano-claw can connect to

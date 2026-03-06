@@ -59,6 +59,7 @@ class Agent:
         request_kind: str = REQUEST_KIND_AGENT_TURN,
         subagent_manager=None,
         runtime_config: Optional[Config] = None,
+        memory_store=None,
     ):
         """Initialize the agent.
 
@@ -75,6 +76,7 @@ class Agent:
         self.request_kind = request_kind
         self.subagent_manager = subagent_manager
         self.runtime_config = runtime_config or Config.load()
+        self.memory_store = memory_store
         current_config = self.runtime_config
         self.max_iterations = current_config.agent.max_iterations
         self.logger = logger or SessionLogger(context.session_id, runtime_config=current_config)
@@ -154,7 +156,26 @@ class Agent:
                 can_submit_plan=self.tools.get("submit_plan") is not None,
             )
 
-        return build_build_execution_contract(self.context)
+        sections = [build_build_execution_contract(self.context)]
+        memory_guidance = self._build_memory_usage_prompt_section()
+        if memory_guidance:
+            sections.append(memory_guidance)
+        return "\n\n".join(section for section in sections if section)
+
+    def _build_memory_usage_prompt_section(self) -> str:
+        """Build concise memory-usage guidance only when memory tools are available."""
+        if self.tools.get("memory_search") is None or self.tools.get("memory_write") is None:
+            return ""
+
+        return "\n".join(
+            [
+                "Session memory guidance:",
+                "- Persist durable session facts that will matter later, especially identity, current workstream, preferences, constraints, decisions, and tasks.",
+                "- Use memory_search before re-asking for known context already likely captured in session memory.",
+                "- Use memory_write only for durable, safe information; do not store secrets, passwords, tokens, or one-off temporary chatter.",
+                "- Prefer upsert_curated for durable memory and append_daily only for temporary journal-style notes.",
+            ]
+        )
 
     def _build_skill_catalog_section(self) -> str:
         """Build the compact catalog of discovered skills for this session."""
@@ -360,11 +381,21 @@ Be concise and helpful."""
             user_message,
             context=self.context,
             skill_manager=self.skill_manager,
+            memory_store=self.memory_store,
+            runtime_config=self.runtime_config,
         )
         turn_id = self.logger.start_turn(
             raw_user_input=user_message,
             normalized_user_input=prepared_turn_input.normalized_user_message,
         )
+        public_turn_id = getattr(self.context, "current_turn_id", turn_id)
+        if self.memory_store is not None and prepared_turn_input.memory_entry_ids:
+            self.memory_store.record_prompt_injection(
+                self.context.session_id,
+                turn_id=public_turn_id,
+                query=prepared_turn_input.normalized_user_message,
+                entry_ids=prepared_turn_input.memory_entry_ids,
+            )
         tools_used: List[str] = []
         skills_used: List[str] = []
         self._replay_pending_skill_events(
@@ -382,6 +413,7 @@ Be concise and helpful."""
         conversation_messages = build_conversation_messages(
             system_message=self._build_system_message(),
             summary_message=self.context.get_summary_message(),
+            memory_note=prepared_turn_input.memory_note,
             history_messages=self.context.get_messages(),
             skill_manager=self.skill_manager,
             preload_skill_names=prepared_turn_input.preload_skill_names,
@@ -406,6 +438,8 @@ Be concise and helpful."""
             user_message,
             context=self.context,
             skill_manager=self.skill_manager,
+            memory_store=self.memory_store,
+            runtime_config=self.runtime_config,
         )
         return (
             prepared_turn_input.normalized_user_message,
@@ -420,11 +454,13 @@ Be concise and helpful."""
         self,
         normalized_user_message: str,
         preload_skill_names: List[str],
+        memory_note: str | None = None,
     ) -> List[Dict]:
         """Build the message list for the next LLM call."""
         return build_conversation_messages(
             system_message=self._build_system_message(),
             summary_message=self.context.get_summary_message(),
+            memory_note=memory_note,
             history_messages=self.context.get_messages(),
             skill_manager=self.skill_manager,
             preload_skill_names=preload_skill_names,
@@ -529,6 +565,22 @@ Be concise and helpful."""
     ) -> str:
         """Finalize a successful turn and return the response text."""
         self._append_completed_turn_to_context(user_message, final_response)
+        public_turn_id = getattr(self.context, "current_turn_id", turn_id)
+        if self.memory_store is not None:
+            try:
+                self.memory_store.auto_save_turn(
+                    self.context.session_id,
+                    turn_id=public_turn_id,
+                    user_message=user_message,
+                    assistant_message=final_response,
+                )
+            except Exception as exc:
+                self.logger.log_error(
+                    turn_id=turn_id,
+                    phase="memory.auto_save",
+                    message=str(exc),
+                    details={},
+                )
         self.logger.finish_turn(
             turn_id, final_response, self.request_metrics, status="completed"
         )

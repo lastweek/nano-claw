@@ -197,8 +197,55 @@ def test_collect_skills_and_tools_expose_runtime_entries(
             return ["missing optional reference"]
 
     class FakeToolRegistry:
+        class FakeTool:
+            def __init__(self, name, description, parameters):
+                self.name = name
+                self.description = description
+                self.parameters = parameters
+
+            def to_schema(self):
+                return {
+                    "type": "function",
+                    "function": {
+                        "name": self.name,
+                        "description": self.description,
+                        "parameters": self.parameters,
+                    },
+                }
+
+        def __init__(self):
+            self._tools = {
+                "read_file": self.FakeTool(
+                    "read_file",
+                    "Read a file from the workspace.",
+                    {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Path to read."},
+                            "offset": {"type": "integer", "description": "Start line."},
+                        },
+                        "required": ["path"],
+                    },
+                ),
+                "deepwiki:ask_question": self.FakeTool(
+                    "deepwiki:ask_question",
+                    "Ask DeepWiki about a repository. (via deepwiki)",
+                    {
+                        "type": "object",
+                        "properties": {
+                            "repoName": {"type": "string", "description": "owner/repo"},
+                            "question": {"type": "string", "description": "Question"},
+                        },
+                        "required": ["repoName", "question"],
+                    },
+                ),
+            }
+
         def list_tools(self):
-            return ["read_file", "deepwiki:ask_question"]
+            return list(self._tools.keys())
+
+        def get(self, name):
+            return self._tools.get(name)
 
     with TestClient(app) as client:
         session = client.post("/api/v1/sessions", json={"title": "admin"}).json()
@@ -223,7 +270,46 @@ def test_collect_skills_and_tools_expose_runtime_entries(
         tools = collect_tools(app, session["id"])
         assert tools["kind"] == "ToolRegistryStateList"
         tool_status = tools["items"][0]["status"]
-        assert tool_status["tools"][0]["name"] == "deepwiki:ask_question"
-        assert tool_status["tools"][0]["source"] == "mcp"
-        assert tool_status["tools"][1]["name"] == "read_file"
-        assert tool_status["tools"][1]["source"] == "builtin"
+        assert tool_status["tool_count"] == 2
+
+        mcp_tool = tool_status["tools"][0]
+        assert mcp_tool["name"] == "deepwiki:ask_question"
+        assert mcp_tool["display_name"] == "ask_question"
+        assert mcp_tool["source"] == "mcp"
+        assert mcp_tool["server"] == "deepwiki"
+        assert mcp_tool["description"] == "Ask DeepWiki about a repository. (via deepwiki)"
+        assert mcp_tool["required_parameters"] == ["repoName", "question"]
+        assert mcp_tool["parameter_count"] == 2
+        assert mcp_tool["parameters_schema"]["properties"]["repoName"]["type"] == "string"
+        assert mcp_tool["function_schema"]["name"] == "deepwiki:ask_question"
+        assert mcp_tool["function_schema"]["parameters"]["required"] == ["repoName", "question"]
+
+        builtin_tool = tool_status["tools"][1]
+        assert builtin_tool["name"] == "read_file"
+        assert builtin_tool["display_name"] == "read_file"
+        assert builtin_tool["source"] == "builtin"
+        assert builtin_tool["server"] is None
+        assert builtin_tool["description"] == "Read a file from the workspace."
+        assert builtin_tool["required_parameters"] == ["path"]
+        assert builtin_tool["parameter_count"] == 2
+        assert builtin_tool["parameters_schema"]["properties"]["path"]["description"] == "Path to read."
+        assert builtin_tool["function_schema"]["parameters"]["properties"]["offset"]["type"] == "integer"
+
+
+def test_collect_tools_for_not_loaded_runtime_returns_empty_catalog(
+    temp_dir,
+    http_runtime_config,
+    patch_http_runtime,
+):
+    """Tool collector should preserve the not-loaded contract for unknown runtimes."""
+    app = create_app(
+        runtime_config=http_runtime_config,
+        repo_root=temp_dir,
+    )
+
+    with TestClient(app):
+        tools = collect_tools(app, "sess_missing")
+        assert tools["kind"] == "ToolRegistryStateList"
+        assert tools["items"][0]["status"]["phase"] == "NotLoaded"
+        assert tools["items"][0]["status"]["tool_count"] == 0
+        assert tools["items"][0]["status"]["tools"] == []

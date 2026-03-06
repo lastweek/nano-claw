@@ -27,7 +27,7 @@ class TestConfigDefaults:
         config = Config()
         assert config.logging.enabled is True
         assert config.logging.async_mode is False
-        assert config.logging.log_dir == "logs"
+        assert config.logging.log_dir == "~/.nano-claw/sessions"
         assert config.logging.buffer_size == 10
 
     def test_agent_defaults(self, monkeypatch):

@@ -11,6 +11,7 @@ const SESSION_CHILD_NODE_DEFS = [
   {kind: "context", label: "Context", hasChildren: false},
   {kind: "runtime", label: "Runtime", hasChildren: false},
   {kind: "agent", label: "Agent", hasChildren: false},
+  {kind: "memory", label: "Memory", hasChildren: true},
   {kind: "skills", label: "Skills", hasChildren: true},
   {kind: "tools", label: "Tools", hasChildren: true},
   {kind: "mcp", label: "MCP", hasChildren: false},
@@ -114,6 +115,22 @@ function cacheKeyForNode(node) {
       return `runtime:${node.sessionId}`;
     case "agent":
       return `agent:${node.sessionId}`;
+    case "memory":
+      return `memory:${node.sessionId}`;
+    case "memory-document":
+      return `memory-document:${node.sessionId}`;
+    case "memory-entry-list":
+      return `memory-entry-list:${node.sessionId}`;
+    case "memory-entry":
+      return `memory-entry:${node.sessionId}:${node.entryId || ""}`;
+    case "memory-daily-list":
+      return `memory-daily-list:${node.sessionId}`;
+    case "memory-daily-file":
+      return `memory-daily-file:${node.sessionId}:${node.date || ""}`;
+    case "memory-settings":
+      return `memory-settings:${node.sessionId}`;
+    case "memory-audit":
+      return `memory-audit:${node.sessionId}`;
     case "skills":
       return `skills:${node.sessionId}`;
     case "tools":
@@ -228,6 +245,56 @@ function extractSkillCatalog(payload) {
   };
 }
 
+function normalizeObjectSchema(schema) {
+  const normalized = schema && typeof schema === "object" ? {...schema} : {};
+  const properties = normalized.properties && typeof normalized.properties === "object"
+    ? {...normalized.properties}
+    : {};
+  normalized.type = typeof normalized.type === "string" ? normalized.type : "object";
+  normalized.properties = properties;
+  return normalized;
+}
+
+function schemaPropertyEntries(parametersSchema) {
+  const schema = normalizeObjectSchema(parametersSchema);
+  return Object.entries(schema.properties).map(([name, definition]) => ([
+    String(name),
+    definition && typeof definition === "object" ? definition : {},
+  ]));
+}
+
+function parameterTypeLabel(definition) {
+  if (Array.isArray(definition?.type) && definition.type.length > 0) {
+    return definition.type.map((value) => String(value)).join(" | ");
+  }
+  if (typeof definition?.type === "string" && definition.type) {
+    return definition.type;
+  }
+  if (Array.isArray(definition?.anyOf) && definition.anyOf.length > 0) {
+    return definition.anyOf.map((item) => parameterTypeLabel(item)).join(" | ");
+  }
+  if (Array.isArray(definition?.oneOf) && definition.oneOf.length > 0) {
+    return definition.oneOf.map((item) => parameterTypeLabel(item)).join(" | ");
+  }
+  if (Array.isArray(definition?.enum) && definition.enum.length > 0) {
+    return "enum";
+  }
+  return "string";
+}
+
+function previewParameterNames(tool, limit = 4) {
+  const required = new Set((tool?.requiredParameters || []).map((value) => String(value)));
+  const labels = schemaPropertyEntries(tool?.parametersSchema)
+    .map(([name]) => (required.has(name) ? `${name}*` : name));
+  if (labels.length === 0) {
+    return "No parameters";
+  }
+  if (labels.length <= limit) {
+    return labels.join(", ");
+  }
+  return `${labels.slice(0, limit).join(", ")}, +${labels.length - limit} more`;
+}
+
 function extractToolCatalog(payload) {
   const item = unwrapSessionScopedResource(payload);
   const status = item?.status || {};
@@ -237,13 +304,38 @@ function extractToolCatalog(payload) {
       const source = String(tool?.source || "unknown");
       const hasPrefix = source === "mcp" && fullName.includes(":");
       const server = hasPrefix ? fullName.split(":", 1)[0] : null;
-      const displayName = hasPrefix ? fullName.slice(server.length + 1) : fullName;
+      const displayName = String(tool?.display_name || (hasPrefix ? fullName.slice(server.length + 1) : fullName));
+      const description = String(tool?.description || "");
+      const parametersSchema = normalizeObjectSchema(tool?.parameters_schema);
+      const requiredParameters = Array.isArray(tool?.required_parameters)
+        ? [...tool.required_parameters].map((value) => String(value))
+        : (Array.isArray(parametersSchema.required) ? [...parametersSchema.required].map((value) => String(value)) : []);
+      const parameterCount = Number.isFinite(Number(tool?.parameter_count))
+        ? Number(tool.parameter_count)
+        : schemaPropertyEntries(parametersSchema).length;
+      const functionSchema = tool?.function_schema && typeof tool.function_schema === "object"
+        ? {
+            ...tool.function_schema,
+            name: String(tool.function_schema.name || fullName),
+            description: String(tool.function_schema.description || description),
+            parameters: normalizeObjectSchema(tool.function_schema.parameters || parametersSchema),
+          }
+        : {
+            name: fullName,
+            description,
+            parameters: parametersSchema,
+          };
       return {
         name: fullName,
         source,
         server,
         displayName,
         group: source === "mcp" && server ? `mcp:${server}` : "builtin",
+        description,
+        parametersSchema,
+        requiredParameters,
+        parameterCount,
+        functionSchema,
       };
     })
     .sort((left, right) => {
@@ -302,6 +394,20 @@ function buildToolItemPayload(sessionId, tool) {
       server: tool?.server || null,
       tool_name: String(tool?.name || ""),
       display_name: String(tool?.displayName || tool?.name || ""),
+      description: String(tool?.description || ""),
+      parameter_count: Number(tool?.parameterCount || 0),
+      required_parameters: Array.isArray(tool?.requiredParameters) ? [...tool.requiredParameters] : [],
+      parameters_schema: normalizeObjectSchema(tool?.parametersSchema),
+      function_schema: tool?.functionSchema && typeof tool.functionSchema === "object"
+        ? {
+            ...tool.functionSchema,
+            parameters: normalizeObjectSchema(tool.functionSchema.parameters),
+          }
+        : {
+            name: String(tool?.name || ""),
+            description: String(tool?.description || ""),
+            parameters: normalizeObjectSchema(tool?.parametersSchema),
+          },
     },
     status: {
       phase: "Ready",
@@ -362,6 +468,52 @@ function replaceChildren(parentId, childNodes) {
   childNodes.forEach((child) => createNode(child));
   parent.childIds = childNodes.map((child) => child.id);
   parent.childrenLoaded = true;
+}
+
+function collectDescendantIds(nodeId) {
+  const node = getNode(nodeId);
+  if (!node) {
+    return [];
+  }
+  const ids = [nodeId];
+  (node.childIds || []).forEach((childId) => {
+    ids.push(...collectDescendantIds(childId));
+  });
+  return ids;
+}
+
+function removeNodeSubtree(nodeId) {
+  const node = getNode(nodeId);
+  if (!node) {
+    return;
+  }
+  const ids = collectDescendantIds(nodeId);
+  if (node.parentId) {
+    const parent = getNode(node.parentId);
+    if (parent) {
+      parent.childIds = (parent.childIds || []).filter((childId) => childId !== nodeId);
+    }
+  }
+  ids.forEach((id) => {
+    delete state.nodesById[id];
+  });
+}
+
+function evictMissingSession(sessionId) {
+  removeNodeSubtree(`session:${sessionId}`);
+  delete state.sessionsIndex[sessionId];
+
+  Object.keys(state.resourceCache).forEach((key) => {
+    if (key.includes(`:${sessionId}`) || key.endsWith(sessionId)) {
+      delete state.resourceCache[key];
+    }
+  });
+
+  const selectedNode = getNode(state.selectedNodeId);
+  if (!selectedNode || selectedNode.sessionId === sessionId) {
+    state.activeRootId = "sessions-root";
+    state.selectedNodeId = "sessions-root";
+  }
 }
 
 function runtimeSnapshotMap() {
@@ -593,6 +745,140 @@ function materializeSkillItems(parentNodeId, payload) {
   replaceChildren(parentNodeId, childNodes);
 }
 
+function materializeMemoryChildren(parentNodeId, payload) {
+  const parentNode = getNode(parentNodeId);
+  if (!parentNode) {
+    return;
+  }
+  if (payload?.status?.phase === "Disabled") {
+    replaceChildren(parentNodeId, []);
+    return;
+  }
+  replaceChildren(parentNodeId, [
+    {
+      id: `${parentNodeId}:document`,
+      kind: "memory-document",
+      label: "MEMORY.md",
+      parentId: parentNodeId,
+      rootId: parentNode.rootId,
+      sessionId: parentNode.sessionId,
+      hasChildren: false,
+      childrenLoaded: false,
+      meta: "curated memory",
+      stale: false,
+      error: null,
+    },
+    {
+      id: `${parentNodeId}:entries`,
+      kind: "memory-entry-list",
+      label: "Curated Entries",
+      parentId: parentNodeId,
+      rootId: parentNode.rootId,
+      sessionId: parentNode.sessionId,
+      hasChildren: true,
+      childrenLoaded: false,
+      meta: `${payload?.status?.entry_count || 0} entries`,
+      stale: false,
+      error: null,
+    },
+    {
+      id: `${parentNodeId}:daily`,
+      kind: "memory-daily-list",
+      label: "Daily Logs",
+      parentId: parentNodeId,
+      rootId: parentNode.rootId,
+      sessionId: parentNode.sessionId,
+      hasChildren: true,
+      childrenLoaded: false,
+      meta: "append-only notes",
+      stale: false,
+      error: null,
+    },
+    {
+      id: `${parentNodeId}:settings`,
+      kind: "memory-settings",
+      label: "Settings",
+      parentId: parentNodeId,
+      rootId: parentNode.rootId,
+      sessionId: parentNode.sessionId,
+      hasChildren: false,
+      childrenLoaded: false,
+      meta: payload?.status?.mode || "",
+      stale: false,
+      error: null,
+    },
+    {
+      id: `${parentNodeId}:audit`,
+      kind: "memory-audit",
+      label: "Audit",
+      parentId: parentNodeId,
+      rootId: parentNode.rootId,
+      sessionId: parentNode.sessionId,
+      hasChildren: false,
+      childrenLoaded: false,
+      meta: "writes, retrievals, injections",
+      stale: false,
+      error: null,
+    },
+  ]);
+}
+
+function materializeMemoryEntries(parentNodeId, payload) {
+  const parentNode = getNode(parentNodeId);
+  if (!parentNode) {
+    return;
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const childNodes = items.map((item) => ({
+    id: `${parentNodeId}:entry:${item?.metadata?.name || ""}`,
+    kind: "memory-entry",
+    label: item?.spec?.title || item?.metadata?.name || "entry",
+    parentId: parentNodeId,
+    rootId: parentNode.rootId,
+    sessionId: parentNode.sessionId,
+    entryId: item?.metadata?.name || "",
+    hasChildren: false,
+    childrenLoaded: false,
+    meta: item?.spec?.kind || "",
+    status: item?.status?.status || "",
+    badges: [
+      ...(item?.spec?.kind ? [{text: item.spec.kind, tone: ""}] : []),
+      ...(item?.status?.status ? [{text: item.status.status, tone: phaseTone(item.status.status)}] : []),
+    ],
+    stale: false,
+    error: null,
+  }));
+  replaceChildren(parentNodeId, childNodes);
+  updateNodeBadges(parentNodeId, [{text: `${items.length} entries`, tone: ""}]);
+}
+
+function materializeMemoryDailyFiles(parentNodeId, payload) {
+  const parentNode = getNode(parentNodeId);
+  if (!parentNode) {
+    return;
+  }
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const childNodes = items.map((item) => {
+    const date = String(item?.spec?.date || item?.metadata?.date || "");
+    return {
+      id: `${parentNodeId}:daily:${date}`,
+      kind: "memory-daily-file",
+      label: date,
+      parentId: parentNodeId,
+      rootId: parentNode.rootId,
+      sessionId: parentNode.sessionId,
+      date,
+      hasChildren: false,
+      childrenLoaded: false,
+      meta: item?.spec?.path || "",
+      stale: false,
+      error: null,
+    };
+  });
+  replaceChildren(parentNodeId, childNodes);
+  updateNodeBadges(parentNodeId, [{text: `${items.length} logs`, tone: ""}]);
+}
+
 function materializeToolItems(parentNodeId, payload) {
   const parentNode = getNode(parentNodeId);
   if (!parentNode) {
@@ -609,11 +895,12 @@ function materializeToolItems(parentNodeId, payload) {
     hasChildren: false,
     childrenLoaded: false,
     toolName: tool.name,
-    meta: tool.source === "mcp" && tool.server ? `mcp:${tool.server}` : tool.source,
+    meta: tool.description || (tool.source === "mcp" && tool.server ? `mcp:${tool.server}` : tool.source),
     status: tool.source,
     badges: [
       {text: tool.source, tone: ""},
       ...(tool.server ? [{text: tool.server, tone: ""}] : []),
+      {text: `${tool.parameterCount} params`, tone: ""},
     ],
     stale: false,
     error: null,
@@ -699,6 +986,72 @@ function applyPayloadToNode(nodeId, payload) {
         tone: "",
       },
     ]);
+    return;
+  }
+
+  if (node.kind === "memory") {
+    node.status = payload.status?.phase || "";
+    updateNodeBadges(node.id, [
+      ...(payload.status?.phase === "Disabled" ? [{text: "disabled", tone: "phase-error"}] : []),
+      ...(payload.status?.phase !== "Disabled" ? [{text: `${payload.status?.entry_count || 0} entries`, tone: ""}] : []),
+      ...(payload.status?.phase !== "Disabled" ? [{text: `${payload.status?.daily_file_count || 0} daily`, tone: ""}] : []),
+      ...(payload.status?.mode ? [{text: payload.status.mode, tone: ""}] : []),
+    ]);
+    if (state.expandedNodeIds.has(node.id)) {
+      materializeMemoryChildren(node.id, payload);
+    }
+    return;
+  }
+
+  if (node.kind === "memory-document") {
+    node.status = payload.status?.phase || "";
+    updateNodeBadges(node.id, [
+      {text: `${String(payload.status?.content || "").length} chars`, tone: ""},
+    ]);
+    return;
+  }
+
+  if (node.kind === "memory-entry-list") {
+    node.status = payload.kind || "SessionMemoryEntryList";
+    materializeMemoryEntries(node.id, payload);
+    return;
+  }
+
+  if (node.kind === "memory-entry") {
+    node.status = payload.status?.status || payload.status?.phase || "";
+    updateNodeBadges(node.id, [
+      ...(payload.spec?.kind ? [{text: payload.spec.kind, tone: ""}] : []),
+      ...(payload.status?.status ? [{text: payload.status.status, tone: phaseTone(payload.status.status)}] : []),
+    ]);
+    return;
+  }
+
+  if (node.kind === "memory-daily-list") {
+    node.status = payload.kind || "SessionMemoryDailyLogList";
+    materializeMemoryDailyFiles(node.id, payload);
+    return;
+  }
+
+  if (node.kind === "memory-daily-file") {
+    node.status = payload.status?.phase || "";
+    updateNodeBadges(node.id, [
+      {text: `${String(payload.status?.content || "").length} chars`, tone: ""},
+    ]);
+    return;
+  }
+
+  if (node.kind === "memory-settings") {
+    node.status = payload.status?.phase || "";
+    updateNodeBadges(node.id, [
+      ...(payload.status?.mode ? [{text: payload.status.mode, tone: ""}] : []),
+    ]);
+    return;
+  }
+
+  if (node.kind === "memory-audit") {
+    const count = Array.isArray(payload?.items) ? payload.items.length : 0;
+    node.status = payload.kind || "SessionMemoryAuditEventList";
+    updateNodeBadges(node.id, [{text: `${count} events`, tone: ""}]);
     return;
   }
 
@@ -792,7 +1145,9 @@ async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || response.statusText);
+    const error = new Error(payload.detail || response.statusText);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -827,6 +1182,30 @@ async function fetchNodePayload(node) {
       return fetchJson(`/api/v1/admin/runtimes/${encodeURIComponent(node.sessionId)}`);
     case "agent":
       return fetchJson(`/api/v1/admin/agent-runtimes/${encodeURIComponent(node.sessionId)}`);
+    case "memory":
+      return fetchJson(makeUrl("/api/v1/admin/memory", {session_id: node.sessionId}));
+    case "memory-document":
+      return fetchJson(makeUrl("/api/v1/admin/memory/document", {session_id: node.sessionId}));
+    case "memory-entry-list":
+      return fetchJson(makeUrl("/api/v1/admin/memory/entries", {session_id: node.sessionId}));
+    case "memory-entry":
+      return fetchJson(
+        makeUrl(`/api/v1/admin/memory/entries/${encodeURIComponent(node.entryId || "")}`, {
+          session_id: node.sessionId,
+        }),
+      );
+    case "memory-daily-list":
+      return fetchJson(makeUrl("/api/v1/admin/memory/daily", {session_id: node.sessionId}));
+    case "memory-daily-file":
+      return fetchJson(
+        makeUrl(`/api/v1/admin/memory/daily/${encodeURIComponent(node.date || "")}`, {
+          session_id: node.sessionId,
+        }),
+      );
+    case "memory-settings":
+      return fetchJson(makeUrl("/api/v1/admin/memory/settings", {session_id: node.sessionId}));
+    case "memory-audit":
+      return fetchJson(makeUrl("/api/v1/admin/memory/audit", {session_id: node.sessionId, limit: 100}));
     case "context": {
       const [sessionPayload, agentPayload] = await Promise.all([
         fetchJson(`/api/v1/admin/sessions/${encodeURIComponent(node.sessionId)}`),
@@ -932,6 +1311,11 @@ async function loadNodeData(nodeId, {force = false} = {}) {
     return payload;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (error?.status === 404 && node.sessionId) {
+      evictMissingSession(node.sessionId);
+      renderAll();
+      throw error;
+    }
     setCacheEntry(cacheKey, {
       status: "error",
       error: message,
@@ -967,7 +1351,7 @@ async function ensureExpandedData(nodeId) {
     materializeSessionChildren(nodeId);
     return;
   }
-  if (["sessions-root", "turns-root", "turns", "logs", "log-session", "skills", "tools"].includes(node.kind)) {
+  if (["sessions-root", "turns-root", "turns", "logs", "log-session", "skills", "tools", "memory", "memory-entry-list", "memory-daily-list"].includes(node.kind)) {
     await loadNodeData(nodeId);
     return;
   }
@@ -1277,6 +1661,74 @@ function renderSkillsSummary(payload) {
   `;
 }
 
+function renderToolParameterSummaryBadges(tool) {
+  const entries = schemaPropertyEntries(tool.parametersSchema);
+  if (entries.length === 0) {
+    return `<div class="detail-empty-inline">No parameters.</div>`;
+  }
+  return `
+    <div class="inline-badges">
+      ${entries.map(([name]) => badgeHtml({
+        text: tool.requiredParameters.includes(name) ? `${name}*` : name,
+        tone: "",
+      })).join("")}
+    </div>
+  `;
+}
+
+function renderToolParameterTable(tool) {
+  const entries = schemaPropertyEntries(tool.parametersSchema);
+  if (entries.length === 0) {
+    return `<div class="detail-empty-inline">No parameters.</div>`;
+  }
+  return `
+    <div class="tool-parameter-table">
+      <div class="tool-parameter-head">
+        <span>Name</span>
+        <span>Type</span>
+        <span>Required</span>
+        <span>Description</span>
+        <span>Defaults</span>
+      </div>
+      ${entries.map(([name, definition]) => `
+        <div class="tool-parameter-row">
+          <code>${escapeHtml(name)}</code>
+          <span>${escapeHtml(parameterTypeLabel(definition))}</span>
+          <span>${tool.requiredParameters.includes(name) ? "yes" : "no"}</span>
+          <span>${escapeHtml(String(definition?.description || ""))}</span>
+          <span>${escapeHtml(
+            Array.isArray(definition?.enum) && definition.enum.length > 0
+              ? `enum: ${definition.enum.join(", ")}`
+              : (definition?.default !== undefined ? `default: ${String(definition.default)}` : "")
+          )}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderToolCatalogRow(tool) {
+  return `
+    <div class="catalog-row tool-catalog-row">
+      <div class="catalog-main">
+        <strong>${escapeHtml(tool.displayName)}</strong>
+        <div class="catalog-copy">${escapeHtml(tool.name)}</div>
+        <div class="catalog-copy">${escapeHtml(tool.description || "No description")}</div>
+        <details class="tool-schema-preview">
+          <summary>${escapeHtml(previewParameterNames(tool))}</summary>
+          ${renderToolParameterSummaryBadges(tool)}
+        </details>
+      </div>
+      <div class="catalog-meta">
+        ${badgeHtml({text: tool.source, tone: ""})}
+        ${tool.server ? badgeHtml({text: tool.server, tone: ""}) : ""}
+        ${badgeHtml({text: `${tool.parameterCount} params`, tone: ""})}
+        ${badgeHtml({text: `${tool.requiredParameters.length} required`, tone: ""})}
+      </div>
+    </div>
+  `;
+}
+
 function renderToolsSummary(payload) {
   const catalog = extractToolCatalog(payload);
   const builtinTools = catalog.tools.filter((tool) => tool.source === "builtin");
@@ -1305,17 +1757,7 @@ function renderToolsSummary(payload) {
           builtinTools.length === 0
             ? `<div class="detail-empty-inline">No builtin tools registered.</div>`
             : builtinTools
-              .map((tool) => `
-                <div class="catalog-row">
-                  <div class="catalog-main">
-                    <strong>${escapeHtml(tool.displayName)}</strong>
-                    <div class="catalog-copy">${escapeHtml(tool.name)}</div>
-                  </div>
-                  <div class="catalog-meta">
-                    ${badgeHtml({text: "builtin", tone: ""})}
-                  </div>
-                </div>
-              `)
+              .map((tool) => renderToolCatalogRow(tool))
               .join("")
         }
       </div>
@@ -1330,20 +1772,7 @@ function renderToolsSummary(payload) {
               .map(([server, tools]) => `
                 <div class="group-block">
                   <div class="group-title">${escapeHtml(server)}</div>
-                  ${tools
-                    .map((tool) => `
-                      <div class="catalog-row">
-                        <div class="catalog-main">
-                          <strong>${escapeHtml(tool.displayName)}</strong>
-                          <div class="catalog-copy">${escapeHtml(tool.name)}</div>
-                        </div>
-                        <div class="catalog-meta">
-                          ${badgeHtml({text: "mcp", tone: ""})}
-                          ${badgeHtml({text: server, tone: ""})}
-                        </div>
-                      </div>
-                    `)
-                    .join("")}
+                  ${tools.map((tool) => renderToolCatalogRow(tool)).join("")}
                 </div>
               `)
               .join("")
@@ -1375,6 +1804,153 @@ function renderSkillItemSummary(payload) {
   `;
 }
 
+function renderMemoryWorkspaceSummary(payload) {
+  return `
+    <section class="detail-section">
+      <h3>Memory Workspace</h3>
+      ${renderKeyValueSummary([
+        ["session_id", payload.spec?.session_id],
+        ["phase", payload.status?.phase],
+        ["mode", payload.status?.mode || ""],
+        ["root_dir", payload.spec?.root_dir || ""],
+        ["document_path", payload.spec?.document_path || ""],
+        ["settings_path", payload.spec?.settings_path || ""],
+        ["audit_path", payload.spec?.audit_path || ""],
+        ["entry_count", payload.status?.entry_count || 0],
+        ["daily_file_count", payload.status?.daily_file_count || 0],
+      ])}
+    </section>
+    ${
+      payload.status?.section_counts
+        ? `
+          <section class="detail-section">
+            <h3>Entry Counts</h3>
+            ${renderObjectCards(payload.status.section_counts, "Sections")}
+            ${renderObjectCards(payload.status.status_counts || {}, "Lifecycle")}
+          </section>
+        `
+        : ""
+    }
+    ${
+      Array.isArray(payload.status?.daily_files) && payload.status.daily_files.length > 0
+        ? `
+          <section class="detail-section">
+            <h3>Daily Logs</h3>
+            <div class="catalog-list">
+              ${payload.status.daily_files.map((date) => `
+                <div class="catalog-row">
+                  <div class="catalog-main"><strong>${escapeHtml(date)}</strong></div>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+        `
+        : ""
+    }
+  `;
+}
+
+function renderMemoryEntrySummary(payload) {
+  return `
+    <section class="detail-section">
+      <h3>Curated Entry</h3>
+      ${renderKeyValueSummary([
+        ["entry_id", payload.metadata?.name],
+        ["session_id", payload.spec?.session_id],
+        ["kind", payload.spec?.kind],
+        ["title", payload.spec?.title],
+        ["status", payload.status?.status],
+        ["source", payload.spec?.source || ""],
+        ["confidence", payload.status?.confidence ?? ""],
+        ["created_at", payload.spec?.created_at || ""],
+        ["updated_at", payload.spec?.updated_at || ""],
+        ["last_verified_at", payload.spec?.last_verified_at || ""],
+        ["supersedes", payload.spec?.supersedes || ""],
+      ])}
+    </section>
+    <section class="detail-section">
+      <h3>Content</h3>
+      <pre>${escapeHtml(payload.status?.content || "")}</pre>
+    </section>
+  `;
+}
+
+function renderMemorySettingsSummary(payload) {
+  return `
+    <section class="detail-section">
+      <h3>Memory Settings</h3>
+      ${renderKeyValueSummary([
+        ["session_id", payload.spec?.session_id],
+        ["path", payload.spec?.path || ""],
+        ["mode", payload.status?.mode],
+        ["auto_retrieve_enabled", payload.status?.auto_retrieve_enabled ? "true" : "false"],
+        ["manual_write_enabled", payload.status?.manual_write_enabled ? "true" : "false"],
+        ["autonomous_write_enabled", payload.status?.autonomous_write_enabled ? "true" : "false"],
+      ])}
+    </section>
+  `;
+}
+
+function renderMemoryAuditSummary(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (items.length === 0) {
+    return `<div class="detail-empty">No memory audit events yet.</div>`;
+  }
+  return `
+    <section class="detail-section">
+      <h3>Memory Audit</h3>
+      <div class="catalog-list">
+        ${items.map((item) => `
+          <div class="catalog-row">
+            <div class="catalog-main">
+              <strong>${escapeHtml(item.spec?.event || "event")}</strong>
+              <div class="catalog-meta">${escapeHtml(item.spec?.timestamp || "")}</div>
+            </div>
+            <div class="catalog-badges">
+              ${badgeHtml({text: item.spec?.event || "event", tone: ""})}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderMemoryDocumentSummary(payload) {
+  return `
+    <section class="detail-section">
+      <h3>Curated Memory</h3>
+      ${renderKeyValueSummary([
+        ["session_id", payload.spec?.session_id],
+        ["path", payload.spec?.path],
+        ["phase", payload.status?.phase],
+      ])}
+    </section>
+    <section class="detail-section">
+      <h3>Markdown</h3>
+      <pre>${escapeHtml(payload.status?.content || "")}</pre>
+    </section>
+  `;
+}
+
+function renderMemoryDailyLogSummary(payload) {
+  return `
+    <section class="detail-section">
+      <h3>Daily Log</h3>
+      ${renderKeyValueSummary([
+        ["session_id", payload.spec?.session_id],
+        ["date", payload.spec?.date],
+        ["path", payload.spec?.path],
+        ["phase", payload.status?.phase],
+      ])}
+    </section>
+    <section class="detail-section">
+      <h3>Markdown</h3>
+      <pre>${escapeHtml(payload.status?.content || "")}</pre>
+    </section>
+  `;
+}
+
 function renderToolItemSummary(payload) {
   return `
     <section class="detail-section">
@@ -1386,7 +1962,25 @@ function renderToolItemSummary(payload) {
         ["source", payload.spec?.source],
         ["group", payload.spec?.group],
         ["server", payload.spec?.server || ""],
+        ["parameter_count", payload.spec?.parameter_count || 0],
       ])}
+    </section>
+    <section class="detail-section">
+      <h3>Description</h3>
+      <div class="detail-card">
+        <code>${escapeHtml(payload.spec?.description || "No description")}</code>
+      </div>
+    </section>
+    <section class="detail-section">
+      <h3>Required Parameters</h3>
+      ${renderBadgeList(payload.spec?.required_parameters || [], "No required parameters")}
+    </section>
+    <section class="detail-section">
+      <h3>Parameter Schema</h3>
+      ${renderToolParameterTable({
+        parametersSchema: payload.spec?.parameters_schema,
+        requiredParameters: Array.isArray(payload.spec?.required_parameters) ? payload.spec.required_parameters : [],
+      })}
     </section>
   `;
 }
@@ -1405,6 +1999,24 @@ function renderSummaryTab(node, payload) {
   }
   if (node.kind === "skills") {
     return renderSkillsSummary(payload);
+  }
+  if (node.kind === "memory") {
+    return renderMemoryWorkspaceSummary(payload);
+  }
+  if (node.kind === "memory-document") {
+    return renderMemoryDocumentSummary(payload);
+  }
+  if (node.kind === "memory-entry") {
+    return renderMemoryEntrySummary(payload);
+  }
+  if (node.kind === "memory-daily-file") {
+    return renderMemoryDailyLogSummary(payload);
+  }
+  if (node.kind === "memory-settings") {
+    return renderMemorySettingsSummary(payload);
+  }
+  if (node.kind === "memory-audit") {
+    return renderMemoryAuditSummary(payload);
   }
   if (node.kind === "tools") {
     return renderToolsSummary(payload);
@@ -1605,6 +2217,9 @@ function markNodesForResource(resource) {
     if (resource === "runtimes" && ["skills", "tools", "skill-item", "tool-item"].includes(node.kind)) {
       affected = true;
     }
+    if (resource === "turns" && ["memory", "memory-document", "memory-entry-list", "memory-entry", "memory-daily-list", "memory-daily-file", "memory-settings", "memory-audit"].includes(node.kind)) {
+      affected = true;
+    }
     if (resource === "turns" && ["turns-root", "turns", "turn"].includes(node.kind)) {
       affected = true;
     }
@@ -1633,6 +2248,7 @@ async function refreshSelectedIfAffected(resource) {
   const affected =
     (resource === "sessions" && ["session", "session-detail", "context"].includes(node.kind)) ||
     (resource === "runtimes" && ["runtime", "agent", "context", "skills", "tools", "skill-item", "tool-item"].includes(node.kind)) ||
+    (resource === "turns" && ["memory", "memory-document", "memory-entry-list", "memory-entry", "memory-daily-list", "memory-daily-file", "memory-settings", "memory-audit"].includes(node.kind)) ||
     (resource === "turns" && ["turns-root", "turns", "turn"].includes(node.kind)) ||
     (resource === "overview" && node.kind === "overview") ||
     (resource === "event-bus" && node.kind === "event-bus") ||

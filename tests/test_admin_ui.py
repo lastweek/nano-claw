@@ -35,6 +35,18 @@ def test_admin_ui_assets_load(temp_dir, http_runtime_config, patch_http_runtime)
         assert "extractToolCatalog" in js_response.text
         assert "renderSkillsSummary" in js_response.text
         assert "renderToolsSummary" in js_response.text
+        assert "renderToolItemSummary" in js_response.text
+        assert "renderToolParameterTable" in js_response.text
+        assert "function_schema" in js_response.text
+        assert "parameters_schema" in js_response.text
+        assert "required_parameters" in js_response.text
+        assert "evictMissingSession" in js_response.text
+        assert "removeNodeSubtree" in js_response.text
+        assert "error.status = response.status" in js_response.text
+        assert '"Memory"' in js_response.text
+        assert "memory-document" in js_response.text
+        assert "memory-daily-list" in js_response.text
+        assert "renderMemoryWorkspaceSummary" in js_response.text
         assert '"Context"' in js_response.text
         assert '"Runtime"' in js_response.text
         assert '"Tools"' in js_response.text

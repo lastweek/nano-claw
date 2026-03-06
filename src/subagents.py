@@ -547,6 +547,7 @@ class SubagentManager:
         excluded_tools = set()
         if child_context.get_session_mode() == "plan":
             excluded_tools.update({"write_plan", "submit_plan"})
+        excluded_tools.update({"memory_read", "memory_search", "memory_write"})
         child_tools = clone_tool_registry(
             parent_agent.tools,
             include_subagent_tool=False,
@@ -563,6 +564,7 @@ class SubagentManager:
             logger=child_logger,
             request_kind=REQUEST_KIND_SUBAGENT_TURN,
             runtime_config=parent_agent.runtime_config,
+            memory_store=None,
         )
 
     def _finalize_subagent_run_record(

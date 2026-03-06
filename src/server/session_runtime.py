@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import logging
 from pathlib import Path
@@ -282,9 +283,13 @@ class SessionRuntime:
         self.store.set_turn_running(turn_id)
         self._emit_event(turn_id, "status", {"status": "running"})
         chunks: list[str] = []
-        for chunk in self._resources.agent.run_stream(input_text):
-            chunks.append(chunk)
-            self._emit_event(turn_id, "chunk", {"text": chunk})
+        setattr(self._resources.context, "current_turn_id", turn_id)
+        try:
+            for chunk in self._resources.agent.run_stream(input_text):
+                chunks.append(chunk)
+                self._emit_event(turn_id, "chunk", {"text": chunk})
+        finally:
+            setattr(self._resources.context, "current_turn_id", None)
 
         final_output = self._final_response_from_context(
             self._resources.context,
@@ -309,7 +314,63 @@ class SessionRuntime:
         tool_state: list[dict[str, Any]] = []
         for name in sorted(tool_registry.list_tools()):
             source = "mcp" if ":" in name else "builtin"
-            tool_state.append({"name": name, "source": source})
+            server = name.split(":", 1)[0] if source == "mcp" and ":" in name else None
+            display_name = name.split(":", 1)[1] if server else name
+            tool = tool_registry.get(name)
+
+            if tool is None:
+                tool_state.append(
+                    {
+                        "name": name,
+                        "display_name": display_name,
+                        "source": source,
+                        "server": server,
+                        "description": "",
+                        "parameters_schema": {"type": "object", "properties": {}},
+                        "required_parameters": [],
+                        "parameter_count": 0,
+                        "function_schema": {
+                            "name": name,
+                            "description": "",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                )
+                continue
+
+            schema = tool.to_schema()
+            function_schema = deepcopy(schema.get("function") or {})
+            description = str(function_schema.get("description") or getattr(tool, "description", "") or "")
+            parameters_schema = deepcopy(function_schema.get("parameters") or {})
+            if not isinstance(parameters_schema, dict):
+                parameters_schema = {}
+            properties = parameters_schema.get("properties")
+            if not isinstance(properties, dict):
+                properties = {}
+            parameters_schema.setdefault("type", "object")
+            parameters_schema["properties"] = properties
+            required_parameters = [
+                str(param)
+                for param in parameters_schema.get("required", [])
+                if str(param)
+            ]
+            function_schema["name"] = name
+            function_schema["description"] = description
+            function_schema["parameters"] = deepcopy(parameters_schema)
+
+            tool_state.append(
+                {
+                    "name": name,
+                    "display_name": display_name,
+                    "source": source,
+                    "server": server,
+                    "description": description,
+                    "parameters_schema": parameters_schema,
+                    "required_parameters": required_parameters,
+                    "parameter_count": len(properties),
+                    "function_schema": function_schema,
+                }
+            )
         return tool_state
 
     def _build_skill_snapshot(self) -> dict[str, Any]:

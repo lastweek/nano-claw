@@ -8,8 +8,16 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.server.admin_collectors_core import (
+    collect_memory_audit,
     collect_config_view,
     collect_event_bus_state,
+    collect_memory_daily_log,
+    collect_memory_daily_logs,
+    collect_memory_document,
+    collect_memory_entries,
+    collect_memory_entry,
+    collect_memory_settings,
+    collect_memory_workspace,
     collect_server_overview,
     collect_session_detail,
     collect_sessions,
@@ -183,6 +191,74 @@ def admin_log_download(request: Request, session_id: str, file: str) -> FileResp
 @router.get("/api/v1/admin/config")
 def admin_config(request: Request) -> dict:
     return collect_config_view(request.app)
+
+
+@router.get("/api/v1/admin/memory")
+def admin_memory_workspace(request: Request, session_id: str) -> dict:
+    resource = collect_memory_workspace(request.app, session_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown session: {session_id}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/document")
+def admin_memory_document(request: Request, session_id: str) -> dict:
+    resource = collect_memory_document(request.app, session_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown session: {session_id}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/entries")
+def admin_memory_entries(request: Request, session_id: str) -> dict:
+    resource = collect_memory_entries(request.app, session_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown session: {session_id}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/entries/{entry_id}")
+def admin_memory_entry(request: Request, session_id: str, entry_id: str) -> dict:
+    resource = collect_memory_entry(request.app, session_id, entry_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown memory entry: {entry_id}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/daily")
+def admin_memory_daily_logs(request: Request, session_id: str) -> dict:
+    resource = collect_memory_daily_logs(request.app, session_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown session: {session_id}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/daily/{date}")
+def admin_memory_daily_log(request: Request, session_id: str, date: str) -> dict:
+    resource = collect_memory_daily_log(request.app, session_id, date)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown daily log: {date}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/settings")
+def admin_memory_settings(request: Request, session_id: str) -> dict:
+    resource = collect_memory_settings(request.app, session_id)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown session: {session_id}")
+    return resource
+
+
+@router.get("/api/v1/admin/memory/audit")
+def admin_memory_audit(
+    request: Request,
+    session_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict:
+    resource = collect_memory_audit(request.app, session_id, limit=limit)
+    if resource is None:
+        raise HTTPException(status_code=404, detail=f"Unknown session: {session_id}")
+    return resource
 
 
 @router.get("/api/v1/admin/stream")

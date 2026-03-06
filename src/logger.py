@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
@@ -23,12 +24,41 @@ from src.logger_format import (
 )
 from src.logger_transport import AsyncWriteTransport
 from src.logger_types import SessionLogSnapshot, TurnState, sanitize_fragment
+from src.session_paths import build_session_dir_name
 from src.tools import (
     REQUEST_KIND_AGENT_TURN,
     REQUEST_KIND_CONTEXT_COMPACTION,
     REQUEST_KIND_PLAN_TURN,
 )
-from src.utils import env_truthy
+from src.utils import env_truthy, resolve_path
+
+
+DEFAULT_LOG_DIR = "~/.nano-claw/sessions"
+LEGACY_LOG_DIR = "logs"
+
+
+def migrate_legacy_log_dir(log_dir: str | Path, repo_root: Path) -> str | None:
+    """Move repo-local logs into the default global log root when safe."""
+    target_log_dir = resolve_path(log_dir, repo_root)
+    default_global_log_dir = resolve_path(DEFAULT_LOG_DIR, repo_root)
+    if target_log_dir != default_global_log_dir:
+        return None
+
+    legacy_log_dir = resolve_path(LEGACY_LOG_DIR, repo_root)
+    if not legacy_log_dir.exists() or not any(legacy_log_dir.iterdir()):
+        return None
+
+    if target_log_dir.exists() and any(target_log_dir.iterdir()):
+        return (
+            "Legacy repo-local logs were left untouched at "
+            f"{legacy_log_dir} because global logs already exist at {target_log_dir}."
+        )
+
+    target_log_dir.parent.mkdir(parents=True, exist_ok=True)
+    if target_log_dir.exists() and not any(target_log_dir.iterdir()):
+        target_log_dir.rmdir()
+    shutil.move(str(legacy_log_dir), str(target_log_dir))
+    return f"Migrated legacy repo-local logs from {legacy_log_dir} to {target_log_dir}."
 
 
 class SessionLogger:
@@ -47,6 +77,8 @@ class SessionLogger:
         parent_turn_id: Optional[int] = None,
         subagent_id: Optional[str] = None,
         subagent_label: Optional[str] = None,
+        session_title: Optional[str] = None,
+        session_created_at: Optional[str] = None,
         runtime_config=None,
     ):
         """Initialize the logger."""
@@ -69,7 +101,7 @@ class SessionLogger:
         if async_mode is None:
             async_mode = self.runtime_config.logging.async_mode
 
-        self.log_dir = Path(log_dir)
+        self.log_dir = resolve_path(log_dir)
         self.enabled = enabled
         self.async_mode = async_mode
         self.buffer_size = buffer_size
@@ -79,6 +111,8 @@ class SessionLogger:
         self.parent_turn_id = parent_turn_id
         self.subagent_id = subagent_id
         self.subagent_label = subagent_label
+        self.session_title = session_title
+        self.session_created_at = session_created_at
 
         self._lock = Lock()
         self._timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -87,7 +121,11 @@ class SessionLogger:
             id_fragment = sanitize_fragment((self.subagent_id or self.session_id)[:UUID_TRUNC_LENGTH])
             self._session_dir_name = f"subagent-{label_fragment}-{id_fragment}"
         else:
-            self._session_dir_name = f"session-{self._timestamp}-{self.session_id[:UUID_TRUNC_LENGTH]}"
+            self._session_dir_name = build_session_dir_name(
+                self.session_id,
+                title=self.session_title,
+                created_at=self.session_created_at,
+            )
         self.session_dir: Optional[Path] = None
         self._artifacts_dir: Optional[Path] = None
         self._session_json_path: Optional[Path] = None

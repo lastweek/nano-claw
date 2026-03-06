@@ -22,6 +22,7 @@ from rich.live import Live
 
 from src.context import Context
 from src.llm import LLMClient
+from src.memory import SessionMemoryStore
 from src.metrics import LLMMetrics
 from src.session_runtime import SessionRuntimeController
 from src.tools import ToolProfile, build_tool_registry
@@ -449,6 +450,7 @@ def build_agent_runtime(
     enable_streaming = runtime_config.ui.enable_streaming
     context = Context.create(cwd=str(cwd))
     skill_manager = discover_skills(console, cwd, skill_debug=skill_debug)
+    memory_store = SessionMemoryStore(repo_root=cwd, runtime_config=runtime_config)
 
     llm_client = LLMClient(runtime_config=runtime_config)
     mcp_manager = build_mcp_manager(console, runtime_config)
@@ -457,6 +459,7 @@ def build_agent_runtime(
         skill_manager=skill_manager,
         mcp_manager=mcp_manager,
         subagent_manager=subagent_manager,
+        memory_store=memory_store,
         include_subagent_tool=runtime_config.subagents.enabled,
         tool_profile=ToolProfile.BUILD,
         runtime_config=runtime_config,
@@ -468,6 +471,7 @@ def build_agent_runtime(
         skill_manager=skill_manager,
         subagent_manager=subagent_manager,
         runtime_config=runtime_config,
+        memory_store=memory_store,
     )
 
     registry = CommandRegistry()
@@ -480,6 +484,7 @@ def build_agent_runtime(
         "skill_manager": skill_manager,
         "session_context": context,
         "subagent_manager": subagent_manager,
+        "memory_store": memory_store,
     }
 
     def apply_tool_profile(tool_profile: ToolProfile) -> None:
@@ -488,6 +493,7 @@ def build_agent_runtime(
             skill_manager=skill_manager,
             mcp_manager=mcp_manager,
             subagent_manager=subagent_manager,
+            memory_store=memory_store,
             include_subagent_tool=True,
             tool_profile=tool_profile,
             runtime_config=runtime_config,

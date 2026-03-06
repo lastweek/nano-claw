@@ -140,3 +140,166 @@ class TurnDetailResponse(BaseModel):
     ended_at: str | None = None
     created_at: str
     updated_at: str
+
+
+class MemoryWorkspaceResponse(BaseModel):
+    """Summary of one session's file-backed memory workspace."""
+
+    session_id: str
+    root_dir: str
+    document_path: str
+    settings_path: str
+    audit_path: str
+    entry_count: int
+    daily_files: list[str]
+    settings_mode: str
+
+
+class MemoryDocumentRequest(BaseModel):
+    """Raw MEMORY.md update payload."""
+
+    content: str
+
+
+class MemoryDocumentResponse(BaseModel):
+    """Serialized MEMORY.md document."""
+
+    session_id: str
+    path: str
+    content: str
+
+
+class DailyMemorySummaryResponse(BaseModel):
+    """One available daily memory file."""
+
+    date: str
+    path: str
+
+
+class DailyMemoryListResponse(BaseModel):
+    """List of available daily memory files for one session."""
+
+    session_id: str
+    files: list[DailyMemorySummaryResponse]
+
+
+class DailyMemoryAppendRequest(BaseModel):
+    """Append one timestamped entry to a daily memory file."""
+
+    title: str
+    content: str
+
+
+class DailyMemoryFileResponse(BaseModel):
+    """Serialized daily memory document."""
+
+    session_id: str
+    date: str
+    path: str
+    content: str
+
+
+class MemorySearchHitResponse(BaseModel):
+    """One file-backed memory search hit."""
+
+    scope: str
+    path: str
+    title: str
+    snippet: str
+    entry_id: str | None = None
+    kind: str | None = None
+    status: str | None = None
+    confidence: float | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    last_verified_at: str | None = None
+    date: str | None = None
+
+
+class MemorySearchResponse(BaseModel):
+    """Search response for one session memory workspace."""
+
+    session_id: str
+    query: str
+    hits: list[MemorySearchHitResponse]
+
+
+class MemoryEntryResponse(BaseModel):
+    """One structured curated memory entry."""
+
+    id: str
+    session_id: str
+    kind: str
+    title: str
+    content: str
+    source: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    confidence: float | None = None
+    last_verified_at: str | None = None
+    status: str
+    supersedes: str | None = None
+
+
+class MemoryEntryCreateRequest(BaseModel):
+    """Create or upsert one curated memory entry."""
+
+    kind: str
+    title: str
+    content: str
+    reason: str
+    source: str | None = None
+    confidence: float | None = None
+    last_verified_at: str | None = None
+
+
+class MemoryEntryUpdateRequest(BaseModel):
+    """Structured curated memory mutation request."""
+
+    action: str
+    title: str | None = None
+    content: str | None = None
+    reason: str
+    source: str | None = None
+    confidence: float | None = None
+    last_verified_at: str | None = None
+
+
+class MemoryEntryListResponse(BaseModel):
+    """List of structured curated memory entries."""
+
+    session_id: str
+    entries: list[MemoryEntryResponse]
+
+
+class MemorySettingsResponse(BaseModel):
+    """Per-session memory mode settings."""
+
+    session_id: str
+    mode: str
+    auto_retrieve_enabled: bool
+    manual_write_enabled: bool
+    autonomous_write_enabled: bool
+    path: str
+
+
+class MemorySettingsUpdateRequest(BaseModel):
+    """Update per-session memory mode settings."""
+
+    mode: str
+
+
+class MemoryAuditEventResponse(BaseModel):
+    """One session memory audit event."""
+
+    timestamp: str
+    session_id: str
+    event: str
+    payload: dict
+
+
+class MemoryAuditResponse(BaseModel):
+    """List of recent session memory audit events."""
+
+    session_id: str
+    events: list[MemoryAuditEventResponse]

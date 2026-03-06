@@ -53,6 +53,30 @@ def test_health_and_session_routes(temp_dir, http_runtime_config, patch_http_run
         assert closed_again.json()["state"] == "closed"
 
 
+def test_delete_session_removes_unified_session_directory(temp_dir, http_runtime_config, patch_http_runtime):
+    """Deleting a session should remove its shared on-disk session directory."""
+    app = create_app(
+        runtime_config=http_runtime_config,
+        repo_root=temp_dir,
+    )
+
+    with TestClient(app) as client:
+        session = client.post("/api/v1/sessions", json={"title": "Cleanup Me"}).json()
+        session_dir = app.state.memory_store.session_root(session["id"])
+        app.state.memory_store.ensure_curated_document(session["id"])
+
+        turn = client.post(
+            f"/api/v1/sessions/{session['id']}/turns",
+            json={"input": "hello"},
+        ).json()
+        wait_for_turn_completion(client, turn["id"])
+        assert session_dir.exists()
+
+        closed = client.delete(f"/api/v1/sessions/{session['id']}")
+        assert closed.status_code == 200
+        assert not session_dir.exists()
+
+
 def test_turn_validation_busy_and_detail_endpoints(temp_dir, http_runtime_config, patch_http_runtime):
     """Turn creation should validate inputs and enforce busy/closed semantics."""
     app = create_app(
@@ -148,3 +172,106 @@ def test_create_session_rolls_back_persisted_state_when_runtime_init_fails(
         assert response.status_code == 500
         assert response.json()["detail"] == "Failed to initialize session runtime: synthetic init failure"
         assert app.state.store.list_sessions() == []
+
+
+def test_memory_routes_expose_file_backed_session_memory(temp_dir, http_runtime_config, patch_http_runtime):
+    """Memory endpoints should expose raw docs plus structured entries and settings."""
+    http_runtime_config.memory.enabled = True
+    app = create_app(
+        runtime_config=http_runtime_config,
+        repo_root=temp_dir,
+    )
+
+    with TestClient(app) as client:
+        session = client.post("/api/v1/sessions", json={"title": "memory"}).json()
+
+        workspace = client.get(f"/api/v1/sessions/{session['id']}/memory")
+        assert workspace.status_code == 200
+        assert workspace.json()["daily_files"] == []
+        assert workspace.json()["entry_count"] == 0
+        assert workspace.json()["settings_mode"] == "manual_only"
+
+        document = client.get(f"/api/v1/sessions/{session['id']}/memory/document")
+        assert document.status_code == 200
+        assert "# Session Memory" in document.json()["content"]
+
+        settings = client.get(f"/api/v1/sessions/{session['id']}/memory/settings")
+        assert settings.status_code == 200
+        assert settings.json()["mode"] == "manual_only"
+
+        settings_patch = client.patch(
+            f"/api/v1/sessions/{session['id']}/memory/settings",
+            json={"mode": "auto"},
+        )
+        assert settings_patch.status_code == 200
+        assert settings_patch.json()["mode"] == "auto"
+
+        created_entry = client.post(
+            f"/api/v1/sessions/{session['id']}/memory/entries",
+            json={
+                "kind": "fact",
+                "title": "deploy-order",
+                "content": "Run migrations first.",
+                "reason": "seed entry",
+                "source": "http_api",
+                "confidence": 0.9,
+            },
+        )
+        assert created_entry.status_code == 201
+        entry_id = created_entry.json()["id"]
+
+        listed_entries = client.get(f"/api/v1/sessions/{session['id']}/memory/entries")
+        assert listed_entries.status_code == 200
+        assert listed_entries.json()["entries"][0]["id"] == entry_id
+
+        archived_entry = client.patch(
+            f"/api/v1/sessions/{session['id']}/memory/entries/{entry_id}",
+            json={"action": "archive", "reason": "archive it"},
+        )
+        assert archived_entry.status_code == 200
+        assert archived_entry.json()["status"] == "archived"
+
+        deleted_entry = client.delete(f"/api/v1/sessions/{session['id']}/memory/entries/{entry_id}")
+        assert deleted_entry.status_code == 204
+
+        updated = client.put(
+            f"/api/v1/sessions/{session['id']}/memory/document",
+            json={"content": "# Session Memory\n\n## Facts\n\n### Deploy\n\nShip carefully.\n"},
+        )
+        assert updated.status_code == 200
+        assert "Ship carefully." in updated.json()["content"]
+
+        appended = client.post(
+            f"/api/v1/sessions/{session['id']}/memory/daily/2026-03-06",
+            json={"title": "Build note", "content": "Investigated memory flow."},
+        )
+        assert appended.status_code == 201
+        assert "Build note" in appended.json()["content"]
+
+        listed = client.get(f"/api/v1/sessions/{session['id']}/memory/daily")
+        assert listed.status_code == 200
+        assert listed.json()["files"][0]["date"] == "2026-03-06"
+
+        searched = client.get(
+            f"/api/v1/sessions/{session['id']}/memory/search",
+            params={"q": "memory", "include_daily": True, "include_inactive": True},
+        )
+        assert searched.status_code == 200
+        assert len(searched.json()["hits"]) >= 1
+        assert searched.json()["hits"][0]["title"]
+
+
+def test_memory_routes_return_clear_error_when_disabled(temp_dir, http_runtime_config, patch_http_runtime):
+    """Memory endpoints should fail cleanly when the feature is disabled."""
+    app = create_app(
+        runtime_config=http_runtime_config,
+        repo_root=temp_dir,
+    )
+
+    with TestClient(app) as client:
+        session = client.post("/api/v1/sessions", json={"title": "no-memory"}).json()
+        response = client.get(f"/api/v1/sessions/{session['id']}/memory")
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Session memory is disabled."
+        entry_response = client.get(f"/api/v1/sessions/{session['id']}/memory/entries")
+        assert entry_response.status_code == 400

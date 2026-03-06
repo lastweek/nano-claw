@@ -50,7 +50,7 @@ def resolve_path(path: str | Path = ".", base: Path | None = None) -> Path:
         >>> resolve_path("data", base=Path("/tmp"))
         PosixPath('/tmp/data')
     """
-    path_obj = Path(path)
+    path_obj = Path(path).expanduser()
     if base and not path_obj.is_absolute():
         return (base / path_obj).resolve()
     return path_obj.resolve()
