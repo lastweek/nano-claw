@@ -18,11 +18,7 @@ from src.llm import LLMClient
 from src.logger import SessionLogSnapshot, SessionLogger
 from src.tools import REQUEST_KIND_SUBAGENT_TURN, clone_tool_registry
 from src.turn_activity import TurnActivityEvent
-
-
-def _utc_now() -> str:
-    """Return an ISO timestamp for run metadata."""
-    return datetime.now().isoformat()
+from src.utils import utc_now
 
 
 def _sanitize_path_fragment(value: str) -> str:
@@ -281,7 +277,7 @@ class SubagentManager:
             label=label,
             task=task,
             status="running",
-            started_at=_utc_now(),
+            started_at=utc_now(),
             ended_at=None,
             duration_s=None,
             result=None,
@@ -579,7 +575,7 @@ class SubagentManager:
         """Store final run metadata in memory and return the finalized result."""
         with self._lock:
             run.status = result.status
-            run.ended_at = _utc_now()
+            run.ended_at = utc_now()
             run.duration_s = duration_s
             run.result = result
         return result

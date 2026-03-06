@@ -1,4 +1,4 @@
-"""Session logging for Nano-Claw."""
+"""Session logging for nano-claw."""
 
 from __future__ import annotations
 

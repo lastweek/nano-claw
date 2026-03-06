@@ -2,7 +2,7 @@
 
 ## Abstract
 
-This document provides comprehensive technical documentation for Nano-Claw's session-local context compaction system. Context compaction is a critical infrastructure component that enables long-running AI coding sessions to operate within finite LLM context windows by automatically summarizing older conversation turns while preserving recent context in raw form. This document explains the problem domain, architectural decisions, implementation details, configuration options, and operational characteristics of the compaction system.
+This document provides comprehensive technical documentation for nano-claw's session-local context compaction system. Context compaction is a critical infrastructure component that enables long-running AI coding sessions to operate within finite LLM context windows by automatically summarizing older conversation turns while preserving recent context in raw form. This document explains the problem domain, architectural decisions, implementation details, configuration options, and operational characteristics of the compaction system.
 
 ---
 
@@ -32,7 +32,7 @@ Large Language Models (LLMs) have finite context windows that limit the amount o
 
 ### The Challenge
 
-Nano-Claw faces several specific challenges:
+nano-claw faces several specific challenges:
 
 1. **Token Accumulation**: Each conversation turn consists of user messages, assistant responses, and potentially tool outputs. These accumulate rapidly in coding sessions where file contents, code diffs, and analysis results are common.
 
@@ -1533,7 +1533,7 @@ Reason: manual_command
 **Result**:
 ```
 Status: skipped
-Reason: Compaction requires at least 2 complete turns so Nano-Claw can keep
+Reason: Compaction requires at least 2 complete turns so nano-claw can keep
         at least 1 raw turn in session history.
 Retained turns: 1
 ```
@@ -1552,7 +1552,7 @@ The context compaction system is a sophisticated solution to the fundamental pro
 - **Graceful degradation** when summarization fails
 - **Full observability** via CLI and logs
 
-Nano-Claw enables long-running coding sessions that maintain context quality while operating within token limits. The system is designed to be:
+nano-claw enables long-running coding sessions that maintain context quality while operating within token limits. The system is designed to be:
 
 1. **Safe**: Never leaves the session without raw context
 2. **Efficient**: Achieves 30-40% token reduction per compaction

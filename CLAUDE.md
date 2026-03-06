@@ -1,4 +1,4 @@
-# Nano-Claw Development Guidelines
+# nano-claw Development Guidelines
 
 ## Testing Requirements
 

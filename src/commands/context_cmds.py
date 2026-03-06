@@ -227,7 +227,7 @@ def register_context_commands(registry) -> None:
                 )
                 if result.error:
                     lines.append(
-                        "4. Summary generation failed, so Nano-Claw used the deterministic fallback summary."
+                        "4. Summary generation failed, so nano-claw used the deterministic fallback summary."
                     )
                 else:
                     lines.append(

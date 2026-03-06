@@ -1,4 +1,4 @@
-"""Skill discovery and loading for Nano-Claw."""
+"""Skill discovery and loading for nano-claw."""
 
 from __future__ import annotations
 

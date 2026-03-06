@@ -1,4 +1,4 @@
-"""LLM integration for Nano-Claw."""
+"""LLM integration for nano-claw."""
 
 import os
 from typing import Optional, List, Dict, TYPE_CHECKING, Any

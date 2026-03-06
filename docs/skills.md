@@ -1,8 +1,8 @@
-# Nano-Claw Skill System
+# nano-claw Skill System
 
 ## Abstract
 
-The Nano-Claw Skill System provides a modular, extensible mechanism for discovering, loading, and applying domain-specific expertise to AI agent operations. Skills are Codex-style knowledge bundles that encapsulate specialized instructions, workflows, and resources without hardcoding domain logic into the agent core. This document describes the architecture, components, and operational patterns of the skill system.
+The nano-claw Skill System provides a modular, extensible mechanism for discovering, loading, and applying domain-specific expertise to AI agent operations. Skills are Codex-style knowledge bundles that encapsulate specialized instructions, workflows, and resources without hardcoding domain logic into the agent core. This document describes the architecture, components, and operational patterns of the skill system.
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ Skills address these challenges by:
 4. **Multi-source discovery** from both repository-local and user-global skill directories
 5. **Explicit activation** through user-controlled syntax rather than implicit inference
 
-This design enables Nano-Claw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles.
+This design enables nano-claw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles.
 
 ---
 
@@ -1310,7 +1310,7 @@ SkillSource = Literal["repo", "user"]
 
 ## Summary
 
-The Nano-Claw Skill System provides:
+The nano-claw Skill System provides:
 
 1. **Modular Expertise**: Domain knowledge encapsulated in external, versionable bundles
 2. **Just-in-Time Loading**: Skills activated via mentions or pinning, not hardcoded
@@ -1319,4 +1319,4 @@ The Nano-Claw Skill System provides:
 5. **Token Awareness**: Size limits and usage tracking for budget management
 6. **CLI Integration**: Rich commands for inspection, activation, and management
 
-This design enables Nano-Claw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles, making it suitable for diverse workflows and team conventions.
+This design enables nano-claw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles, making it suitable for diverse workflows and team conventions.

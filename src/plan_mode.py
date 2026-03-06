@@ -7,11 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.context import Context, SessionPlan
-
-
-def _utc_now() -> str:
-    """Return the current timestamp in ISO-8601 format."""
-    return datetime.now().isoformat()
+from src.utils import utc_now
 
 
 def build_plan_file_path(session_context: Context, plan_dir: str) -> Path:
@@ -24,7 +20,7 @@ def build_plan_file_path(session_context: Context, plan_dir: str) -> Path:
 
 def create_session_plan(session_context: Context, *, task: str, plan_dir: str) -> SessionPlan:
     """Create or replace the current session plan metadata."""
-    timestamp = _utc_now()
+    timestamp = utc_now()
     plan_path = build_plan_file_path(session_context, plan_dir)
     existing_content = plan_path.read_text(encoding="utf-8") if plan_path.exists() else ""
     plan = SessionPlan(
@@ -61,7 +57,7 @@ def update_session_plan(
         summary=current_plan.summary if summary is None else summary,
         report=current_plan.report if report is None else report,
         status=current_plan.status if status is None else status,
-        updated_at=_utc_now(),
+        updated_at=utc_now(),
     )
     session_context.set_current_plan(updated_plan)
     return updated_plan
@@ -103,8 +99,8 @@ def mark_plan_approved(session_context: Context) -> SessionPlan:
     approved_plan = replace(
         current_plan,
         status="approved",
-        approved_at=_utc_now(),
-        updated_at=_utc_now(),
+        approved_at=utc_now(),
+        updated_at=utc_now(),
     )
     session_context.set_current_plan(approved_plan)
     session_context.active_approved_plan_id = approved_plan.plan_id

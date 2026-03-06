@@ -1,4 +1,4 @@
-"""Read file tool for Nano-Claw."""
+"""Read file tool for nano-claw."""
 
 from src.tools import Tool, ToolResult
 

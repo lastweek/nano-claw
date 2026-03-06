@@ -299,7 +299,7 @@ class ContextCompactionManager:
             return "The context window is unknown, so automatic compaction cannot decide when to run."
         if reason == "insufficient_turns":
             return (
-                "Compaction requires at least 2 complete turns so Nano-Claw can keep "
+                "Compaction requires at least 2 complete turns so nano-claw can keep "
                 "at least 1 raw turn in session history."
             )
         if reason == "no_evictable_turns":
