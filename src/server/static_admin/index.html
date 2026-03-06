@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nano-claw admin</title>
+  <link rel="stylesheet" href="/admin/static/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="eyebrow">local admin</div>
+        <h1>nano-claw admin</h1>
+        <p>Session-centric runtime explorer</p>
+      </div>
+      <div id="server-summary" class="server-summary"></div>
+      <div id="connection-status" class="connection-status disconnected">
+        <span class="dot"></span>
+        <span class="status-label">disconnected</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="nav-pane panel">
+        <div class="pane-header">
+          <h2>Explore</h2>
+        </div>
+        <div id="admin-nav" class="admin-nav"></div>
+      </aside>
+
+      <section class="tree-pane panel">
+        <div class="pane-header">
+          <div>
+            <h2>Tree</h2>
+            <p class="pane-copy">Expand sessions to inspect runtime internals and history.</p>
+          </div>
+          <button id="refresh-button" type="button">Refresh</button>
+        </div>
+        <div id="tree-view" class="tree-view"></div>
+      </section>
+
+      <section class="detail-pane panel">
+        <div id="detail-header" class="detail-header"></div>
+        <div id="detail-tabs" class="tabs">
+          <button class="tab active" data-tab="summary" type="button">Summary</button>
+          <button class="tab" data-tab="related" type="button">Related</button>
+          <button class="tab" data-tab="raw" type="button">Raw JSON</button>
+        </div>
+        <div id="detail-content" class="detail-content"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/admin/static/app.js"></script>
+</body>
+</html>

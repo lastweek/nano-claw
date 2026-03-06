@@ -1,10 +1,12 @@
-# Nano-Claw
+# nano-claw
 
-Nano-Claw is a terminal-first coding agent for working directly inside an existing repository. It combines an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and per-session logs so you can see exactly what happened during each turn.
+nano-claw is a terminal-first coding agent for working directly inside an existing repository. It combines an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and per-session logs so you can see exactly what happened during each turn.
 
 It is built for practical repo work rather than chat demos: inspect files, edit code, run commands, load focused instructions only when needed, hand off isolated subtasks, and keep long sessions usable with context compaction.
 
-## Why Nano-Claw
+It also includes a small localhost HTTP wrapper so you can drive the same repo-scoped runtime from a browser without adding auth, multi-user state, or remote deployment complexity.
+
+## Why nano-claw
 
 - Work where the code already is: your shell, your repo, your files
 - Keep the agent observable with a live activity feed and structured logs
@@ -16,6 +18,7 @@ It is built for practical repo work rather than chat demos: inspect files, edit 
 
 - Built-in tools for `read_file`, `write_file`, `run_command`, `load_skill`, and `run_subagent`
 - Streaming terminal UX with live activity updates while the model is thinking
+- Optional local HTTP/SSE server with a tiny browser UI for session-based turns
 - Slash commands for tools, skills, MCP servers, plans, subagents, and context usage
 - Local `SKILL.md` bundles with discovery, pinning, and on-demand loading
 - MCP support so external tools appear beside built-in tools
@@ -70,6 +73,20 @@ Alternative entrypoint:
 python src/main.py
 ```
 
+Start the local HTTP wrapper instead:
+
+```bash
+python -m src.main serve
+```
+
+`serve` prints the local access points on startup, including:
+
+- chat UI: `http://127.0.0.1:8765/`
+- admin UI: `http://127.0.0.1:8765/admin`
+- health: `http://127.0.0.1:8765/api/v1/health`
+
+If you bind HTTP mode to a non-loopback host, nano-claw prints a warning because the chat and admin surfaces have no auth in v1.
+
 ## What It Looks Like
 
 ```text
@@ -81,7 +98,7 @@ Agent >
   • Tool finished: read_file(file_path='src/logger.py') (0.00s)
   • LLM call 2 produced final answer
 
-Nano-Claw writes one session directory per CLI run, with session.json for
+nano-claw writes one session directory per CLI run, with session.json for
 metadata, llm.log for the execution timeline, and events.jsonl for structured
 events.
 
@@ -92,11 +109,11 @@ events.
 
 ### Tools
 
-Nano-Claw uses the same tool-calling loop for built-in tools and MCP-provided tools. The default repo-workflow set covers reading files, writing files, running shell commands, loading skills, and delegating child tasks.
+nano-claw uses the same tool-calling loop for built-in tools and MCP-provided tools. The default repo-workflow set covers reading files, writing files, running shell commands, loading skills, and delegating child tasks.
 
 ### Skills
 
-Skills are local instruction bundles stored in `SKILL.md`. Nano-Claw keeps a compact skill catalog in context and loads full skill bodies only when they are pinned, explicitly requested with `$skill-name`, or loaded through the `load_skill` tool.
+Skills are local instruction bundles stored in `SKILL.md`. nano-claw keeps a compact skill catalog in context and loads full skill bodies only when they are pinned, explicitly requested with `$skill-name`, or loaded through the `load_skill` tool.
 
 Discovery roots:
 
@@ -142,7 +159,7 @@ Each command also supports built-in help such as `/command help`, `/command --he
 
 ## Configuration
 
-Nano-Claw uses three configuration sources:
+nano-claw uses three configuration sources:
 
 - `config.yaml` for primary local configuration
 - `.env` for secrets and machine-local values
@@ -152,6 +169,9 @@ Useful settings to know early:
 
 - `ui.enable_streaming`
 - `agent.max_iterations`
+- `server.host`
+- `server.port`
+- `server.db_path`
 - `logging.enabled`
 - `logging.async_mode`
 - `logging.log_dir`
@@ -174,6 +194,75 @@ mcp:
 ```
 
 See [config.yaml.example](config.yaml.example) for the full example file.
+
+## HTTP Mode
+
+The optional HTTP wrapper is intentionally local and minimal:
+
+- One daemon process started inside one repo
+- One SQLite database for persisted sessions and turns
+- One long-running main `Agent` per active session
+- One dedicated worker thread per session runtime
+- No auth, approvals, or multi-user features
+- SSE streaming for live output and turn status
+- Tiny static UI served from the same process
+
+Key endpoints:
+
+- `GET /api/v1/health`
+- `GET /api/v1/sessions`
+- `POST /api/v1/sessions`
+- `GET /api/v1/sessions/{session_id}`
+- `DELETE /api/v1/sessions/{session_id}`
+- `POST /api/v1/sessions/{session_id}/turns`
+- `GET /api/v1/turns/{turn_id}`
+- `GET /api/v1/turns/{turn_id}/stream`
+
+## Admin Console
+
+nano-claw now includes a Kubernetes-style read-only admin console:
+
+- UI: `GET /admin`
+- static assets: `GET /admin/static/*`
+- API base: `/api/v1/admin/*`
+
+Primary admin resources:
+
+- `ServerOverview`
+- `Session` / `SessionList`
+- `SessionRuntime` / `SessionRuntimeList`
+- `Turn` / `TurnList`
+- `EventBusState`
+- `AgentRuntime`
+- `ToolRegistryState`
+- `SkillCatalogState`
+- `MCPServerState`
+- `SubagentRun`
+- `LogSession`
+- `LogFile`
+- `ConfigView`
+
+Admin stream endpoint:
+
+- `GET /api/v1/admin/stream?resources=<csv>&session_id=<optional>&interval_ms=<optional>`
+- SSE event names: `snapshot`, `resource_changed`, `heartbeat`, `error`
+
+Operational note:
+
+- For long-running admin streams, monitor server file descriptors with `lsof -p <pid> | wc -l`; the count should stay stable rather than climb over time.
+
+The admin UI is session-centric rather than flat-resource-centric:
+
+- the left rail keeps global roots such as Overview, Sessions, Global Turns, Event Bus, and Config
+- the main tree lets you expand a session into Context, Runtime, Agent, Skills, Tools, MCP, Subagents, Turns, and Logs
+- the detail pane stays read-only with Summary, Related, and Raw JSON tabs
+
+Read-only and safety guarantees:
+
+- Admin endpoints are `GET` only.
+- Prompt/output/log payloads are redacted and preview-truncated by default.
+- Raw log bytes require explicit `log-files/download`.
+- Log file access is constrained to the configured log root.
 
 ## Documentation
 

@@ -449,6 +449,18 @@ class MCPServer:
         except Exception:
             return False
 
+    def snapshot(self, *, health: bool, cached_tool_count: int) -> Dict[str, Any]:
+        """Return a stable public snapshot of server state for admin views."""
+        return {
+            "name": self.name,
+            "url": self.url,
+            "protocol_version": self.protocol_version,
+            "session_id_present": bool(self.session_id),
+            "initialized": self._initialized,
+            "health": health,
+            "cached_tool_count": cached_tool_count,
+        }
+
     def close(self) -> None:
         """Close the HTTP client and best-effort close the MCP session."""
         try:
@@ -642,6 +654,19 @@ class MCPManager:
         for name, server in self._servers.items():
             status[name] = server.health_check()
         return status
+
+    def list_server_snapshots(self, *, health: Dict[str, bool] | None = None) -> List[Dict[str, Any]]:
+        """Return stable public snapshots for all managed MCP servers."""
+        snapshots: List[Dict[str, Any]] = []
+        health_by_server = health or {}
+        for name, server in self._servers.items():
+            snapshots.append(
+                server.snapshot(
+                    health=bool(health_by_server.get(name, False)),
+                    cached_tool_count=len(self._cached_tool_defs.get(name, [])),
+                )
+            )
+        return snapshots
 
     def close_all(self) -> None:
         """Close all MCP server connections."""
