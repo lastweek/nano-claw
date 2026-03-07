@@ -190,6 +190,7 @@ def collect_config_view(app: FastAPI) -> dict[str, Any]:
         "plan": runtime_config.plan.model_dump(),
         "server": runtime_config.server.model_dump(),
         "memory": runtime_config.memory.model_dump(),
+        "macos_tools": runtime_config.macos_tools.model_dump(),
         "mcp": runtime_config.mcp.model_dump(),
     }
     sanitized = redact_config_object(config_payload)

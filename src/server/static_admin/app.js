@@ -223,6 +223,8 @@ function extractSkillCatalog(payload) {
       name: String(skill?.name || ""),
       source: String(skill?.source || "unknown"),
       catalog_visible: Boolean(skill?.catalog_visible),
+      eligible: Boolean(skill?.eligible ?? true),
+      eligibility_reason: String(skill?.eligibility_reason || ""),
       body_line_count: Number(skill?.body_line_count || 0),
       short_description: String(skill?.short_description || ""),
     }))
@@ -369,6 +371,8 @@ function buildSkillItemPayload(sessionId, skill, activeSkills) {
       session_id: sessionId,
       source: String(skill?.source || "unknown"),
       catalog_visible: Boolean(skill?.catalog_visible),
+      eligible: Boolean(skill?.eligible ?? true),
+      eligibility_reason: String(skill?.eligibility_reason || ""),
       body_line_count: Number(skill?.body_line_count || 0),
       short_description: String(skill?.short_description || ""),
     },
@@ -1633,10 +1637,12 @@ function renderSkillsSummary(payload) {
                   <div class="catalog-main">
                     <strong>${escapeHtml(skill.name)}</strong>
                     <div class="catalog-copy">${escapeHtml(skill.short_description || "No short description")}</div>
+                    ${skill.eligibility_reason ? `<div class="catalog-copy">${escapeHtml(skill.eligibility_reason)}</div>` : ""}
                   </div>
                   <div class="catalog-meta">
                     ${badgeHtml({text: skill.source, tone: ""})}
                     ${badgeHtml({text: skill.catalog_visible ? "catalog" : "hidden", tone: ""})}
+                    ${badgeHtml({text: skill.eligible ? "eligible" : "ineligible", tone: skill.eligible ? "" : "phase-stopped"})}
                     ${skill.body_line_count > 0 ? badgeHtml({text: `${skill.body_line_count} lines`, tone: ""}) : ""}
                     ${catalog.activeSkills.includes(skill.name) ? badgeHtml({text: "active", tone: "phase-active"}) : ""}
                   </div>
@@ -1798,6 +1804,8 @@ function renderSkillItemSummary(payload) {
         ["short_description", payload.spec?.short_description || ""],
         ["active", payload.status?.active ? "true" : "false"],
         ["catalog_visible", payload.spec?.catalog_visible ? "true" : "false"],
+        ["eligible", payload.spec?.eligible ? "true" : "false"],
+        ["eligibility_reason", payload.spec?.eligibility_reason || ""],
         ["body_line_count", payload.spec?.body_line_count ?? 0],
       ])}
     </section>

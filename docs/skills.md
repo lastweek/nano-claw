@@ -157,6 +157,8 @@ sequenceDiagram
 - `skill_file: Path` - Absolute path to SKILL.md
 - `source: SkillSource` - Either "repo" or "user"
 - `catalog_visible: bool` - Whether to show in system prompt catalog
+- `eligible: bool` - Whether the skill is currently usable in this runtime
+- `eligibility_reason: Optional[str]` - Why the skill is hidden from the active catalog when ineligible
 - `scripts: List[Path]` - Recursive inventory of files under scripts/
 - `references: List[Path]` - Recursive inventory of files under references/
 - `assets: List[Path]` - Recursive inventory of files under assets/
@@ -211,7 +213,7 @@ Scans both roots recursively for `SKILL.md` files and returns warnings.
 Returns all discovered skills sorted by name.
 
 #### `list_catalog_skills() -> List[SkillSpec]`
-Returns skills with `catalog_visible=True` for system prompt display.
+Returns skills with `catalog_visible=True` and `eligible=True` for system prompt display.
 
 #### `get_skill(name: str) -> Optional[SkillSpec]`
 Retrieves a skill by name or returns None.
@@ -225,7 +227,7 @@ Parses explicit `$skill-name` mentions from user text.
 - Extracts known skill names in order of appearance
 - Deduplicates while preserving first occurrence order
 - Removes mentions from cleaned text
-- Ignores unknown mentions (leaves them in cleaned text)
+- Ignores unknown or ineligible mentions (leaves them in cleaned text)
 
 **Returns**: `SkillMentionParseResult` with:
 - `skill_names: List[str]` - Extracted skill names
@@ -335,6 +337,11 @@ name: pdf
 description: Handle PDF workflows with visual verification and text extraction
 metadata:
   short-description: PDF workflows
+  requires:
+    os:
+      - darwin
+    config:
+      - macos_tools.enabled
 ---
 
 # PDF Processing Guidelines
@@ -358,6 +365,17 @@ Always compare visual appearance with extracted text for accuracy.
 
 - `name` (string): Unique skill identifier
   - Must be non-empty after stripping whitespace
+- `description` (string): Clear skill trigger description
+
+### Optional Runtime Requirements
+
+Skills can declare runtime gates in `metadata.requires`:
+
+- `metadata.requires.os`: list of supported OS names such as `darwin`
+- `metadata.requires.config`: list of dotted config flags that must be truthy
+
+Ineligible skills remain discoverable in `/skill`, but they are excluded from the prompt catalog and `$skill-name` preloading until their requirements are satisfied. This is useful for default-on features that still need an explicit opt-out flag, such as the macOS helper tool group.
+Repo-local macOS app skills can gate individual helpers like `macos_tools.enable_reminders` or `macos_tools.enable_messages` the same way.
   - Used as the key for `$skill-name` mentions
   - Must be unique across repo and user skills
 

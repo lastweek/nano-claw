@@ -62,6 +62,24 @@ class TestConfigDefaults:
         assert config.plan.plan_dir == ".nano-claw/plans"
         assert config.plan.allow_subagents is True
 
+    def test_macos_tools_defaults(self, monkeypatch):
+        """Test macOS helper config defaults."""
+        monkeypatch.delenv("MACOS_TOOLS_ENABLED", raising=False)
+        monkeypatch.delenv("MACOS_TOOLS_TIMEOUT_SECONDS", raising=False)
+        monkeypatch.delenv("MACOS_TOOLS_ENABLE_FINDER", raising=False)
+        monkeypatch.delenv("MACOS_TOOLS_ENABLE_CALENDAR", raising=False)
+        monkeypatch.delenv("MACOS_TOOLS_ENABLE_NOTES", raising=False)
+        monkeypatch.delenv("MACOS_TOOLS_ENABLE_REMINDERS", raising=False)
+        monkeypatch.delenv("MACOS_TOOLS_ENABLE_MESSAGES", raising=False)
+        config = Config()
+        assert config.macos_tools.enabled is True
+        assert config.macos_tools.timeout_seconds == 10
+        assert config.macos_tools.enable_finder is True
+        assert config.macos_tools.enable_calendar is True
+        assert config.macos_tools.enable_notes is True
+        assert config.macos_tools.enable_reminders is True
+        assert config.macos_tools.enable_messages is True
+
 
 class TestConfigValidation:
     """Test configuration validation."""
@@ -131,6 +149,7 @@ class TestConfigSingleton:
         assert hasattr(config, 'ui')
         assert hasattr(config, 'subagents')
         assert hasattr(config, 'plan')
+        assert hasattr(config, 'macos_tools')
         assert isinstance(config.llm, LLMConfig)
         assert isinstance(config.logging, LoggingConfig)
 
@@ -189,6 +208,18 @@ class TestConfigEnvOverrides:
         monkeypatch.setenv("AGENT_MAX_ITERATIONS", "20")
         config = Config()
         assert config.agent.max_iterations == 20
+
+    def test_macos_tool_env_override(self, monkeypatch):
+        """Test MACOS_TOOLS_* env variable overrides."""
+        monkeypatch.setenv("MACOS_TOOLS_ENABLED", "true")
+        monkeypatch.setenv("MACOS_TOOLS_TIMEOUT_SECONDS", "25")
+        monkeypatch.setenv("MACOS_TOOLS_ENABLE_NOTES", "false")
+        monkeypatch.setenv("MACOS_TOOLS_ENABLE_MESSAGES", "false")
+        config = Config()
+        assert config.macos_tools.enabled is True
+        assert config.macos_tools.timeout_seconds == 25
+        assert config.macos_tools.enable_notes is False
+        assert config.macos_tools.enable_messages is False
 
     def test_max_parallel_env_override(self, monkeypatch):
         """Test SUBAGENTS_MAX_PARALLEL env variable override."""

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from src.agent import Agent
-from src.config import config
+from src.config import Config, config
 from src.context import CompactedContextSummary, Context
 from src.skills import SkillManager
 from src.tools.skill import LoadSkillTool
@@ -186,6 +186,55 @@ def test_explicit_skill_mention_preloads_and_cleans_user_message(temp_dir):
     assert "Use pypdf when layout is irrelevant." in preload_tool["content"]
     assert messages[-1] == {"role": "user", "content": "summarize this file"}
     assert context.messages[0] == {"role": "user", "content": "summarize this file"}
+
+
+def test_ineligible_skill_mention_does_not_preload(temp_dir):
+    """Explicit mentions should not preload skills that fail runtime eligibility checks."""
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        name="macos-finder",
+        description="Finder helper",
+        short_description="Finder helper",
+        body="Use finder_action.",
+    )
+    skill_file = repo_root / ".nano-claw" / "skills" / "macos-finder" / "SKILL.md"
+    skill_file.write_text(
+        "---\n"
+        "name: macos-finder\n"
+        "description: Finder helper\n"
+        "metadata:\n"
+        "  short-description: Finder helper\n"
+        "  requires:\n"
+        "    os:\n"
+        "      - darwin\n"
+        "    config:\n"
+        "      - macos_tools.enabled\n"
+        "      - macos_tools.enable_finder\n"
+        "---\n\n"
+        "Use finder_action.\n",
+        encoding="utf-8",
+    )
+    runtime_config = Config({"macos_tools": {"enabled": False, "enable_finder": True}})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+    manager.discover()
+
+    tools = ToolRegistry()
+    tools.register(LoadSkillTool(manager))
+    llm = StubLLM([{"role": "assistant", "content": "Done"}])
+    context = Context.create(cwd=str(repo_root))
+    agent = Agent(llm, tools, context, skill_manager=manager)
+
+    agent.run("$macos-finder reveal this")
+
+    messages = llm.calls[0]["messages"]
+    assert not any(message.get("tool_calls") for message in messages if message["role"] == "assistant")
+    assert messages[-1] == {"role": "user", "content": "$macos-finder reveal this"}
 
 
 def test_load_skill_result_is_ephemeral_and_tool_calls_stay_in_history(temp_dir):

@@ -98,6 +98,10 @@ def register_skill_commands(registry) -> None:
             if skill is None:
                 console.print(f"[red]Unknown skill: {remainder}[/red]")
                 return
+            if not skill.eligible:
+                reason = skill.eligibility_reason or "Skill is not eligible in this runtime."
+                console.print(f"[red]Cannot pin skill {skill.name}: {reason}[/red]")
+                return
 
             session_context.activate_skill(skill.name)
             console.print(f"[green]Pinned skill:[/green] {skill.name}")
@@ -146,6 +150,8 @@ def register_skill_commands(registry) -> None:
                 f"[bold]Description:[/bold] {skill.description}",
                 f"[bold]Source:[/bold] {skill.source}",
                 f"[bold]Catalog Visible:[/bold] {'yes' if skill.catalog_visible else 'no'}",
+                f"[bold]Eligible:[/bold] {'yes' if skill.eligible else 'no'}",
+                f"[bold]Eligibility Reason:[/bold] {skill.eligibility_reason or 'n/a'}",
                 f"[bold]Skill File:[/bold] {skill.skill_file}",
                 f"[bold]Body Lines:[/bold] {line_info}",
                 "",
@@ -166,15 +172,24 @@ def register_skill_commands(registry) -> None:
             warnings = skill_manager.discover()
             removed = []
             for skill_name in list(session_context.get_active_skills()):
-                if skill_manager.get_skill(skill_name) is None:
+                skill = skill_manager.get_skill(skill_name)
+                if skill is None:
                     session_context.deactivate_skill(skill_name)
-                    removed.append(skill_name)
+                    removed.append((skill_name, "missing"))
+                elif not skill.eligible:
+                    session_context.deactivate_skill(skill_name)
+                    removed.append((skill_name, skill.eligibility_reason or "ineligible"))
 
             for warning in warnings:
                 console.print(f"[yellow]Skill warning: {warning}[/yellow]")
 
-            for skill_name in removed:
-                console.print(f"[yellow]Removed missing pinned skill: {skill_name}[/yellow]")
+            for skill_name, reason in removed:
+                if reason == "missing":
+                    console.print(f"[yellow]Removed missing pinned skill: {skill_name}[/yellow]")
+                else:
+                    console.print(
+                        f"[yellow]Removed ineligible pinned skill: {skill_name} ({reason})[/yellow]"
+                    )
 
             input_helper = context.get("input_helper")
             if input_helper is not None:

@@ -25,7 +25,12 @@ from src.llm import LLMClient
 from src.memory import SessionMemoryStore
 from src.metrics import LLMMetrics
 from src.session_runtime import SessionRuntimeController
-from src.tools import ToolProfile, build_tool_registry
+from src.tools import (
+    ToolProfile,
+    ToolRegistryReport,
+    build_tool_registry,
+    build_tool_registry_with_report,
+)
 from src.agent import Agent
 from src.config import Config, config
 from src.mcp import MCPManager
@@ -374,9 +379,15 @@ def validate_provider_config(runtime_config: Config) -> str | None:
     )
 
 
-def discover_skills(console: Console, cwd: Path, *, skill_debug: bool) -> SkillManager:
+def discover_skills(
+    console: Console,
+    cwd: Path,
+    *,
+    runtime_config: Config,
+    skill_debug: bool,
+) -> SkillManager:
     """Discover local skills and print any warnings."""
-    skill_manager = SkillManager(repo_root=cwd)
+    skill_manager = SkillManager(repo_root=cwd, runtime_config=runtime_config)
     skill_warnings = skill_manager.discover()
 
     for warning in skill_warnings:
@@ -389,7 +400,8 @@ def discover_skills(console: Console, cwd: Path, *, skill_debug: bool) -> SkillM
             console.print(
                 "[dim]"
                 f"[SKILL] discovered {skill.name} "
-                f"(source={skill.source}, catalog={'yes' if skill.catalog_visible else 'no'})"
+                f"(source={skill.source}, catalog={'yes' if skill.catalog_visible else 'no'}, "
+                f"eligible={'yes' if skill.eligible else 'no'})"
                 "[/dim]"
             )
 
@@ -439,23 +451,47 @@ def build_mcp_manager(console: Console, runtime_config: Config) -> MCPManager | 
         return None
 
 
+def print_tool_debug_report(console: Console, report: ToolRegistryReport) -> None:
+    """Print a stable CLI-only startup summary for tool registration."""
+    console.print("[dim][TOOL] Debug mode enabled[/dim]")
+    console.print(
+        "[dim]"
+        f"[TOOL] profile={report.tool_profile.value} "
+        f"platform={report.platform} "
+        f"registered={len(report.registered_tool_names)}"
+        "[/dim]"
+    )
+    registered_tools = ", ".join(report.registered_tool_names) if report.registered_tool_names else "none"
+    console.print(f"[dim][TOOL] registered tools: {registered_tools}[/dim]")
+    for decision in report.group_decisions:
+        console.print(f"[dim][TOOL] {decision.name}: {decision.status}[/dim]")
+    for decision in report.tool_decisions:
+        console.print(f"[dim][TOOL] {decision.name}: {decision.status}[/dim]")
+
+
 def build_agent_runtime(
     console: Console,
     runtime_config: Config,
     cwd: Path,
     *,
     skill_debug: bool,
+    tool_debug: bool,
 ) -> AppRuntime:
     """Assemble the runtime dependencies for the interactive CLI."""
     enable_streaming = runtime_config.ui.enable_streaming
     context = Context.create(cwd=str(cwd))
-    skill_manager = discover_skills(console, cwd, skill_debug=skill_debug)
+    skill_manager = discover_skills(
+        console,
+        cwd,
+        runtime_config=runtime_config,
+        skill_debug=skill_debug,
+    )
     memory_store = SessionMemoryStore(repo_root=cwd, runtime_config=runtime_config)
 
     llm_client = LLMClient(runtime_config=runtime_config)
     mcp_manager = build_mcp_manager(console, runtime_config)
     subagent_manager = SubagentManager(runtime_config=runtime_config)
-    tools = build_tool_registry(
+    tools, tool_report = build_tool_registry_with_report(
         skill_manager=skill_manager,
         mcp_manager=mcp_manager,
         subagent_manager=subagent_manager,
@@ -464,6 +500,8 @@ def build_agent_runtime(
         tool_profile=ToolProfile.BUILD,
         runtime_config=runtime_config,
     )
+    if tool_debug:
+        print_tool_debug_report(console, tool_report)
     agent = Agent(
         llm_client,
         tools,
@@ -601,6 +639,7 @@ def main() -> None:
     load_dotenv()
     argv = sys.argv[1:]
     skill_debug = env_truthy("SKILL_DEBUG")
+    tool_debug = env_truthy("TOOL_DEBUG")
     console = build_console()
     runtime_config = load_runtime_config(console)
 
@@ -624,6 +663,7 @@ def main() -> None:
             runtime_config,
             Path.cwd(),
             skill_debug=skill_debug,
+            tool_debug=tool_debug,
         )
     except Exception as exc:
         console.print(f"[red]Error initializing runtime: {exc}[/red]")

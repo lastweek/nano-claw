@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Literal, Optional
+from typing import Any, Dict, Iterable, List, Literal, Optional
 
 import yaml
 
@@ -14,6 +15,15 @@ import yaml
 SkillSource = Literal["repo", "user"]
 
 MAX_SKILL_BODY_LINES = 500
+
+
+class SkillUnavailableError(Exception):
+    """Raised when a discovered skill is unavailable in the current runtime."""
+
+    def __init__(self, skill_name: str, reason: str) -> None:
+        self.skill_name = skill_name
+        self.reason = reason
+        super().__init__(f"Skill '{skill_name}' is not available: {reason}")
 
 
 @dataclass
@@ -31,6 +41,10 @@ class SkillSpec:
     scripts: List[Path]
     references: List[Path]
     assets: List[Path]
+    eligible: bool = True
+    eligibility_reason: Optional[str] = None
+    required_os: List[str] = field(default_factory=list)
+    required_config: List[str] = field(default_factory=list)
 
     @property
     def body_line_count(self) -> int:
@@ -50,10 +64,14 @@ class SkillManager:
         self,
         repo_root: Optional[Path] = None,
         user_root: Optional[Path] = None,
+        runtime_config: Any | None = None,
+        platform_name: str | None = None,
     ) -> None:
         self.repo_root = (repo_root or Path.cwd()).resolve()
         self.user_root = (user_root or Path.home() / ".nano-claw" / "skills").expanduser().resolve()
         self.repo_skills_root = self.repo_root / ".nano-claw" / "skills"
+        self.runtime_config = runtime_config
+        self.platform_name = (platform_name or sys.platform).lower()
         self._skills: Dict[str, SkillSpec] = {}
         self._warnings: List[str] = []
 
@@ -97,7 +115,7 @@ class SkillManager:
         return [
             skill
             for skill in self.list_skills()
-            if skill.catalog_visible
+            if skill.catalog_visible and skill.eligible
         ]
 
     def get_skill(self, name: str) -> Optional[SkillSpec]:
@@ -114,7 +132,8 @@ class SkillManager:
 
         def replacer(match: re.Match) -> str:
             skill_name = match.group(1)
-            if skill_name not in self._skills:
+            skill = self._skills.get(skill_name)
+            if skill is None or not skill.eligible:
                 return match.group(0)
 
             if skill_name not in found:
@@ -131,7 +150,7 @@ class SkillManager:
 
         for index, skill_name in enumerate(skill_names, start=1):
             skill = self.get_skill(skill_name)
-            if skill is None:
+            if skill is None or not skill.eligible:
                 continue
 
             tool_call_id = f"skill_preload_{index}_{skill.name}"
@@ -162,6 +181,8 @@ class SkillManager:
         skill = self.get_skill(name)
         if skill is None:
             raise KeyError(name)
+        if not skill.eligible:
+            raise SkillUnavailableError(name, skill.eligibility_reason or "Skill is not eligible")
         return self._format_skill_payload(skill)
 
     def _load_skill_file(
@@ -190,10 +211,21 @@ class SkillManager:
 
         metadata_block = metadata.get("metadata", {})
         short_description = description.strip()
+        required_os: List[str] = []
+        required_config: List[str] = []
         if isinstance(metadata_block, dict):
             short_candidate = metadata_block.get("short-description")
             if isinstance(short_candidate, str) and short_candidate.strip():
                 short_description = short_candidate.strip()
+            requires_block = metadata_block.get("requires", {})
+            if isinstance(requires_block, dict):
+                required_os = self._normalize_string_list(requires_block.get("os"))
+                required_config = self._normalize_string_list(requires_block.get("config"))
+
+        eligible, eligibility_reason = self._evaluate_skill_eligibility(
+            required_os=required_os,
+            required_config=required_config,
+        )
 
         root_dir = skill_file.parent.resolve()
         skill = SkillSpec(
@@ -204,10 +236,14 @@ class SkillManager:
             root_dir=root_dir,
             skill_file=skill_file.resolve(),
             source=source,
-            catalog_visible=True,
+            catalog_visible=eligible,
             scripts=self._inventory_resources(root_dir / "scripts"),
             references=self._inventory_resources(root_dir / "references"),
             assets=self._inventory_resources(root_dir / "assets"),
+            eligible=eligible,
+            eligibility_reason=eligibility_reason,
+            required_os=required_os,
+            required_config=required_config,
         )
 
         if skill.is_oversized:
@@ -249,11 +285,58 @@ class SkillManager:
             return []
         return sorted(path.resolve() for path in root.rglob("*") if path.is_file())
 
+    def _normalize_string_list(self, value: Any) -> List[str]:
+        if isinstance(value, str):
+            return [value.strip()] if value.strip() else []
+        if isinstance(value, list):
+            normalized = []
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    normalized.append(item.strip())
+            return normalized
+        return []
+
+    def _evaluate_skill_eligibility(
+        self,
+        *,
+        required_os: List[str],
+        required_config: List[str],
+    ) -> tuple[bool, str | None]:
+        normalized_required_os = [entry.lower() for entry in required_os if entry]
+        if normalized_required_os and self.platform_name not in normalized_required_os:
+            return False, f"Requires os: {', '.join(required_os)}"
+
+        for config_path in required_config:
+            value = self._get_config_value(config_path)
+            if not bool(value):
+                return False, f"Requires config: {config_path}"
+
+        return True, None
+
+    def _get_config_value(self, dotted_path: str) -> Any:
+        config_root = self.runtime_config
+        if config_root is None:
+            from src.config import config as runtime_config
+
+            config_root = runtime_config
+
+        current = config_root
+        for segment in dotted_path.split("."):
+            if isinstance(current, dict):
+                current = current.get(segment)
+                continue
+            current = getattr(current, segment, None)
+            if current is None:
+                return None
+        return current
+
     def _format_skill_payload(self, skill: SkillSpec) -> str:
         sections = [
             f"Skill: {skill.name}",
             f"Description: {skill.description}",
             f"Source: {skill.skill_file}",
+            f"Eligible: {'yes' if skill.eligible else 'no'}",
+            f"Eligibility Reason: {skill.eligibility_reason or 'n/a'}",
             "",
             "Instructions:",
             skill.body,

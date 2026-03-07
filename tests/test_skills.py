@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from src.config import Config
 from src.context import Context
 from src.skills import SkillManager
 from src.tools.skill import LoadSkillTool
@@ -222,3 +223,218 @@ def test_build_preload_messages_returns_assistant_tool_pairs(temp_dir):
     assert json.loads(messages[2]["tool_calls"][0]["function"]["arguments"]) == {"skill_name": "terraform"}
     assert messages[3]["role"] == "tool"
     assert "Skill: terraform" in messages[3]["content"]
+
+
+def test_gated_skill_is_ineligible_when_runtime_requirements_are_missing(temp_dir):
+    """macOS-gated skills should stay discoverable but hidden from the active catalog."""
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        (
+            "name: macos-finder\n"
+            "description: Finder helper\n"
+            "metadata:\n"
+            "  short-description: Finder helper\n"
+            "  requires:\n"
+            "    os:\n"
+            "      - darwin\n"
+            "    config:\n"
+            "      - macos_tools.enabled\n"
+            "      - macos_tools.enable_finder"
+        ),
+        "Use finder_action.\n",
+    )
+    runtime_config = Config({"macos_tools": {"enabled": False, "enable_finder": True}})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+
+    manager.discover()
+
+    skill = manager.get_skill("macos-finder")
+    assert skill is not None
+    assert skill.eligible is False
+    assert skill.catalog_visible is False
+    assert skill.eligibility_reason == "Requires config: macos_tools.enabled"
+    assert manager.list_catalog_skills() == []
+
+
+def test_gated_skill_is_eligible_by_default_on_darwin(temp_dir, monkeypatch):
+    """macOS-gated skills should be eligible by default on Darwin."""
+    monkeypatch.delenv("MACOS_TOOLS_ENABLED", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_FINDER", raising=False)
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        (
+            "name: macos-finder\n"
+            "description: Finder helper\n"
+            "metadata:\n"
+            "  short-description: Finder helper\n"
+            "  requires:\n"
+            "    os:\n"
+            "      - darwin\n"
+            "    config:\n"
+            "      - macos_tools.enabled\n"
+            "      - macos_tools.enable_finder"
+        ),
+        "Use finder_action.\n",
+    )
+    runtime_config = Config({})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+
+    manager.discover()
+
+    skill = manager.get_skill("macos-finder")
+    assert skill is not None
+    assert skill.eligible is True
+    assert skill.catalog_visible is True
+    assert skill.eligibility_reason is None
+    assert [item.name for item in manager.list_catalog_skills()] == ["macos-finder"]
+
+
+def test_load_skill_tool_returns_error_for_ineligible_skill(temp_dir):
+    """load_skill should fail cleanly for skills gated off by runtime requirements."""
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-notes",
+        (
+            "name: macos-notes\n"
+            "description: Notes helper\n"
+            "metadata:\n"
+            "  requires:\n"
+            "    os:\n"
+            "      - darwin\n"
+            "    config:\n"
+            "      - macos_tools.enabled\n"
+            "      - macos_tools.enable_notes"
+        ),
+        "Use notes_action.\n",
+    )
+    runtime_config = Config({"macos_tools": {"enabled": True, "enable_notes": False}})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+    manager.discover()
+    tool = LoadSkillTool(manager)
+
+    result = tool.execute(Context.create(cwd=str(repo_root)), skill_name="macos-notes")
+
+    assert result.success is False
+    assert result.error == "Requires config: macos_tools.enable_notes"
+
+
+def test_messages_skill_is_eligible_by_default_on_darwin(temp_dir, monkeypatch):
+    """Messages-gated skills should be eligible by default on Darwin."""
+    monkeypatch.delenv("MACOS_TOOLS_ENABLED", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_MESSAGES", raising=False)
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-messages",
+        (
+            "name: macos-messages\n"
+            "description: Messages helper\n"
+            "metadata:\n"
+            "  requires:\n"
+            "    os:\n"
+            "      - darwin\n"
+            "    config:\n"
+            "      - macos_tools.enabled\n"
+            "      - macos_tools.enable_messages"
+        ),
+        "Use messages_action.\n",
+    )
+    runtime_config = Config({})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+
+    manager.discover()
+
+    skill = manager.get_skill("macos-messages")
+    assert skill is not None
+    assert skill.eligible is True
+    assert skill.catalog_visible is True
+    assert skill.eligibility_reason is None
+
+
+def test_reminders_skill_is_ineligible_when_app_flag_is_disabled(temp_dir):
+    """Per-app macOS skill gates should hide only the disabled app skill."""
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-reminders",
+        (
+            "name: macos-reminders\n"
+            "description: Reminders helper\n"
+            "metadata:\n"
+            "  requires:\n"
+            "    os:\n"
+            "      - darwin\n"
+            "    config:\n"
+            "      - macos_tools.enabled\n"
+            "      - macos_tools.enable_reminders"
+        ),
+        "Use reminders_action.\n",
+    )
+    runtime_config = Config({"macos_tools": {"enabled": True, "enable_reminders": False}})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+
+    manager.discover()
+
+    skill = manager.get_skill("macos-reminders")
+    assert skill is not None
+    assert skill.eligible is False
+    assert skill.catalog_visible is False
+    assert skill.eligibility_reason == "Requires config: macos_tools.enable_reminders"
+
+
+def test_ineligible_skills_do_not_preload_from_explicit_mentions(temp_dir):
+    """Explicit $skill mentions should ignore skills that are ineligible in this runtime."""
+    repo_root = temp_dir / "repo"
+    write_skill(
+        repo_root / ".nano-claw" / "skills" / "macos-calendar",
+        (
+            "name: macos-calendar\n"
+            "description: Calendar helper\n"
+            "metadata:\n"
+            "  requires:\n"
+            "    os:\n"
+            "      - darwin\n"
+            "    config:\n"
+            "      - macos_tools.enabled\n"
+            "      - macos_tools.enable_calendar"
+        ),
+        "Use calendar_action.\n",
+    )
+    runtime_config = Config({"macos_tools": {"enabled": False, "enable_calendar": True}})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+    manager.discover()
+
+    result = manager.extract_skill_mentions("$macos-calendar show my schedule")
+
+    assert result.skill_names == []
+    assert result.cleaned_text == "$macos-calendar show my schedule"

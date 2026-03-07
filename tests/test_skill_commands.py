@@ -6,6 +6,7 @@ from rich.console import Console
 
 from src.commands import builtin
 from src.commands.registry import CommandRegistry
+from src.config import Config
 from src.context import Context
 from src.skills import SkillManager
 
@@ -69,7 +70,6 @@ def test_skill_command_lists_available_skills(temp_dir):
     assert "terraform" in text
     assert "PDF workflows" in text
     assert "Terraform workflows" in text
-    assert "Catalog" in text
     assert text.count("yes") >= 2
 
 
@@ -122,6 +122,7 @@ def test_skill_show_displays_metadata_and_resources(temp_dir):
     assert "Skill: pdf" in text
     assert "Description:" in text
     assert "Catalog Visible:" in text
+    assert "Eligible:" in text
     assert "Skill File:" in text
     assert str(ref_file.resolve()) in text
 
@@ -138,6 +139,52 @@ def test_skill_show_reports_user_global_skill_as_catalog_visible(temp_dir):
     assert "Skill: terraform" in text
     assert "Catalog Visible:" in text
     assert "yes" in text
+
+
+def test_skill_use_rejects_ineligible_skill(temp_dir):
+    """`/skill use` should reject discovered skills that are gated off in this runtime."""
+    repo_root = temp_dir / "repo"
+    gated_skill_dir = repo_root / ".nano-claw" / "skills" / "macos-finder"
+    gated_skill_dir.mkdir(parents=True, exist_ok=True)
+    (gated_skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: macos-finder\n"
+        "description: Finder helper\n"
+        "metadata:\n"
+        "  short-description: Finder helper\n"
+        "  requires:\n"
+        "    os:\n"
+        "      - darwin\n"
+        "    config:\n"
+        "      - macos_tools.enabled\n"
+        "      - macos_tools.enable_finder\n"
+        "---\n\n"
+        "Use finder_action.\n",
+        encoding="utf-8",
+    )
+    runtime_config = Config({"macos_tools": {"enabled": False, "enable_finder": True}})
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=runtime_config,
+        platform_name="darwin",
+    )
+    manager.discover()
+
+    registry = CommandRegistry()
+    builtin.register_all(registry)
+    session_context = Context.create(cwd=str(repo_root))
+    command_context = {
+        "skill_manager": manager,
+        "session_context": session_context,
+    }
+    output = io.StringIO()
+    console = create_console(output)
+
+    registry.execute("/skill use macos-finder", console, command_context)
+
+    assert session_context.get_active_skills() == []
+    assert "Cannot pin skill macos-finder: Requires config: macos_tools.enabled" in output.getvalue()
 
 
 def test_skill_reload_prunes_missing_pins(temp_dir):

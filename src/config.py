@@ -165,6 +165,26 @@ class MemoryConfig(BaseSettings):
     max_search_results: int = Field(default=10, ge=1)
 
 
+class MacOSToolsConfig(BaseSettings):
+    """macOS app-helper tool configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="MACOS_TOOLS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    enabled: bool = Field(default=True)
+    timeout_seconds: int = Field(default=10, ge=1)
+    enable_finder: bool = Field(default=True)
+    enable_calendar: bool = Field(default=True)
+    enable_notes: bool = Field(default=True)
+    enable_reminders: bool = Field(default=True)
+    enable_messages: bool = Field(default=True)
+
+
 class ServerConfig(BaseSettings):
     """Local HTTP server configuration."""
 
@@ -246,6 +266,7 @@ class Config:
         self.subagents = self._create_config(SubagentConfig, config_dict.get("subagents", {}))
         self.plan = self._create_config(PlanConfig, config_dict.get("plan", {}))
         self.memory = self._create_config(MemoryConfig, config_dict.get("memory", {}))
+        self.macos_tools = self._create_config(MacOSToolsConfig, config_dict.get("macos_tools", {}))
         self.server = self._create_config(ServerConfig, config_dict.get("server", {}))
         self.mcp = self._create_mcp_config(config_dict.get("mcp", {}))
 

@@ -9,6 +9,8 @@ from src.tools import Tool, ToolResult
 if TYPE_CHECKING:
     from src.skills import SkillManager
 
+from src.skills import SkillUnavailableError
+
 
 class LoadSkillTool(Tool):
     """Tool for loading a skill's full instructions into the current turn."""
@@ -41,5 +43,7 @@ class LoadSkillTool(Tool):
             payload = self.skill_manager.format_skill_for_tool(skill_name)
         except KeyError:
             return ToolResult(success=False, error=f"Unknown skill: {skill_name}")
+        except SkillUnavailableError as exc:
+            return ToolResult(success=False, error=exc.reason)
 
         return ToolResult(success=True, data=payload)

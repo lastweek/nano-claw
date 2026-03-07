@@ -4,6 +4,7 @@ import pytest
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from rich.console import Console
 from src.turn_activity import TurnActivityEvent
@@ -20,6 +21,54 @@ def make_recording_console() -> Console:
 def normalize_output(output: str) -> str:
     """Normalize Rich exported text for stable assertions."""
     return "\n".join(line.rstrip() for line in output.splitlines())
+
+
+def make_runtime_config(temp_dir: Path, **overrides):
+    """Build a deterministic CLI runtime config for startup tests."""
+    from src.config import Config
+
+    payload = {
+        "llm": {
+            "provider": "ollama",
+            "model": "fake-model",
+            "base_url": "http://localhost:11434/v1",
+        },
+        "logging": {
+            "enabled": True,
+            "async_mode": False,
+            "log_dir": str(temp_dir / "sessions"),
+            "buffer_size": 1,
+        },
+        "memory": {
+            "enabled": False,
+            "root_dir": str(temp_dir / "sessions"),
+            "auto_load_memory": True,
+            "max_auto_chars": 4000,
+            "max_search_results": 10,
+        },
+        "mcp": {"servers": []},
+        "subagents": {
+            "enabled": True,
+            "max_parallel": 1,
+            "max_per_turn": 1,
+            "default_timeout_seconds": 60,
+        },
+    }
+    for key, value in overrides.items():
+        payload[key] = value
+    return Config(payload)
+
+
+class StubLLMClient:
+    """Minimal LLM client stub for startup/runtime assembly tests."""
+
+    def __init__(self, runtime_config=None):
+        runtime_config = runtime_config or {}
+        llm_config = getattr(runtime_config, "llm", None)
+        self.provider = getattr(llm_config, "provider", "ollama")
+        self.model = getattr(llm_config, "model", "fake-model")
+        self.base_url = getattr(llm_config, "base_url", "http://localhost:11434/v1")
+        self.logger = None
 
 
 def make_metrics(
@@ -800,3 +849,128 @@ def test_run_agent_turn_enables_live_auto_refresh_in_terminal():
 
     assert live_kwargs["auto_refresh"] is True
     assert live_kwargs["refresh_per_second"] == 12
+
+
+def test_build_agent_runtime_prints_tool_debug_report_on_darwin(temp_dir, monkeypatch):
+    """CLI startup should report macOS tools as registered by default on Darwin."""
+    from src.main import build_agent_runtime
+
+    monkeypatch.setattr("src.main.LLMClient", StubLLMClient)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLED", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_FINDER", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_CALENDAR", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_NOTES", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_REMINDERS", raising=False)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLE_MESSAGES", raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    runtime_config = make_runtime_config(temp_dir)
+    console = make_recording_console()
+
+    runtime = build_agent_runtime(
+        console,
+        runtime_config,
+        temp_dir,
+        skill_debug=False,
+        tool_debug=True,
+    )
+    try:
+        normalized = normalize_output(console.export_text())
+        assert "[TOOL] Debug mode enabled" in normalized
+        assert "[TOOL] profile=build" in normalized
+        assert "[TOOL] registered tools:" in normalized
+        assert "[TOOL] macos_tools: registered" in normalized
+        assert "[TOOL] finder_action: registered" in normalized
+        assert "[TOOL] calendar_action: registered" in normalized
+        assert "[TOOL] notes_action: registered" in normalized
+        assert "[TOOL] reminders_action: registered" in normalized
+        assert "[TOOL] messages_action: registered" in normalized
+    finally:
+        runtime.agent.logger.close()
+        if runtime.mcp_manager:
+            runtime.mcp_manager.close_all()
+
+
+def test_build_agent_runtime_prints_tool_debug_platform_skip(temp_dir, monkeypatch):
+    """CLI startup should report platform-based macOS tool skips on unsupported OSes."""
+    from src.main import build_agent_runtime
+
+    monkeypatch.setattr("src.main.LLMClient", StubLLMClient)
+    monkeypatch.delenv("MACOS_TOOLS_ENABLED", raising=False)
+    monkeypatch.setattr(sys, "platform", "linux")
+    runtime_config = make_runtime_config(temp_dir)
+    console = make_recording_console()
+
+    runtime = build_agent_runtime(
+        console,
+        runtime_config,
+        temp_dir,
+        skill_debug=False,
+        tool_debug=True,
+    )
+    try:
+        normalized = normalize_output(console.export_text())
+        assert "[TOOL] macos_tools: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] finder_action: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] calendar_action: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] notes_action: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] reminders_action: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] messages_action: skipped: platform is linux, requires darwin" in normalized
+    finally:
+        runtime.agent.logger.close()
+        if runtime.mcp_manager:
+            runtime.mcp_manager.close_all()
+
+
+def test_build_agent_runtime_omits_tool_debug_output_when_disabled(temp_dir, monkeypatch):
+    """CLI startup should stay quiet unless tool debug is enabled."""
+    from src.main import build_agent_runtime
+
+    monkeypatch.setattr("src.main.LLMClient", StubLLMClient)
+    runtime_config = make_runtime_config(temp_dir)
+    console = make_recording_console()
+
+    runtime = build_agent_runtime(
+        console,
+        runtime_config,
+        temp_dir,
+        skill_debug=False,
+        tool_debug=False,
+    )
+    try:
+        normalized = normalize_output(console.export_text())
+        assert "[TOOL]" not in normalized
+    finally:
+        runtime.agent.logger.close()
+        if runtime.mcp_manager:
+            runtime.mcp_manager.close_all()
+
+
+def test_main_reads_tool_debug_env(monkeypatch, temp_dir):
+    """The main entrypoint should pass TOOL_DEBUG through to CLI runtime assembly."""
+    import src.main as main_mod
+
+    monkeypatch.setenv("TOOL_DEBUG", "1")
+    console = make_recording_console()
+    runtime_config = make_runtime_config(temp_dir)
+    seen = {}
+
+    monkeypatch.setattr(main_mod, "build_console", lambda: console)
+    monkeypatch.setattr(main_mod, "load_runtime_config", lambda _console: runtime_config)
+    monkeypatch.setattr(main_mod, "print_banner", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(main_mod, "run_repl", lambda *_args, **_kwargs: None)
+
+    def fake_build_agent_runtime(console, runtime_config, cwd, *, skill_debug, tool_debug):
+        seen["tool_debug"] = tool_debug
+        console.print("[dim][TOOL] Debug mode enabled[/dim]")
+        return SimpleNamespace(
+            agent=SimpleNamespace(logger=SimpleNamespace(close=lambda: None)),
+            mcp_manager=None,
+        )
+
+    monkeypatch.setattr(main_mod, "build_agent_runtime", fake_build_agent_runtime)
+
+    main_mod.main()
+
+    normalized = normalize_output(console.export_text())
+    assert seen["tool_debug"] is True
+    assert "[TOOL] Debug mode enabled" in normalized

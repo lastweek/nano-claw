@@ -62,12 +62,12 @@ def prepare_turn_input(
     pinned_skill_names = [
         skill_name
         for skill_name in context.get_active_skills()
-        if skill_manager.get_skill(skill_name) is not None
+        if (skill := skill_manager.get_skill(skill_name)) is not None and skill.eligible
     ]
     preload_skill_names.extend(pinned_skill_names)
     for skill_name in pinned_skill_names:
         skill = skill_manager.get_skill(skill_name)
-        if skill is None:
+        if skill is None or not skill.eligible:
             continue
         pending_skill_events.append(
             PendingSkillEvent(
@@ -91,7 +91,7 @@ def prepare_turn_input(
     preload_skill_names.extend(explicit_skill_names)
     for skill_name in explicit_skill_names:
         skill = skill_manager.get_skill(skill_name)
-        if skill is None:
+        if skill is None or not skill.eligible:
             continue
         pending_skill_events.append(
             PendingSkillEvent(

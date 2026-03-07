@@ -12,6 +12,10 @@ def test_config_example_includes_public_subagent_limits():
 
     assert "max_parallel: 3" in example_config
     assert "max_per_turn: 6" in example_config
+    assert "macos_tools:" in example_config
+    assert "macos_tools:\n  enabled: true" in example_config
+    assert "enable_reminders: true" in example_config
+    assert "enable_messages: true" in example_config
 
 
 def test_docs_reference_async_logging_and_max_parallel():
@@ -21,5 +25,8 @@ def test_docs_reference_async_logging_and_max_parallel():
     subagents_doc = (REPO_ROOT / "docs" / "subagents.md").read_text(encoding="utf-8")
 
     assert "logging.async_mode" in readme
+    assert "macos_tools.enabled" in readme
+    assert "reminders_action" in readme
+    assert "messages_action" in readme
     assert "max_parallel" in design_overview
     assert "max_parallel" in subagents_doc

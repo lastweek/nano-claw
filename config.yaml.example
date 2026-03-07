@@ -55,6 +55,15 @@ memory:
   max_auto_chars: 4000
   max_search_results: 10
 
+macos_tools:
+  enabled: true
+  timeout_seconds: 10
+  enable_finder: true
+  enable_calendar: true
+  enable_notes: true
+  enable_reminders: true
+  enable_messages: true
+
 # MCP (Model Context Protocol) Servers
 # External tool servers that nano-claw can connect to
 mcp:

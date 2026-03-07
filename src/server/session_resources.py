@@ -96,7 +96,11 @@ def build_session_resources(
 
     # Building these separately keeps SessionRuntime focused on lifecycle and turn execution.
     context = _build_context_from_snapshot(repo_root, session_snapshot)
-    skill_manager = SkillManager(repo_root=repo_root)
+    try:
+        skill_manager = SkillManager(repo_root=repo_root, runtime_config=runtime_config)
+    except TypeError:
+        # Some tests stub SkillManager with the legacy constructor signature.
+        skill_manager = SkillManager(repo_root=repo_root)
     skill_manager.discover()
     mcp_manager = _build_mcp_manager(runtime_config)
     memory_store = memory_store or SessionMemoryStore(

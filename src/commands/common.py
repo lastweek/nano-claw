@@ -33,7 +33,9 @@ def print_skill_list(console: Console, skill_manager, session_context) -> None:
     table.add_column("Description", style="white", width=50)
     table.add_column("Source", style="dim", width=10)
     table.add_column("Catalog", style="magenta", width=8)
+    table.add_column("Eligible", style="magenta", width=8)
     table.add_column("Active", style="cyan", width=8)
+    table.add_column("Reason", style="dim", width=30)
 
     for skill in skills:
         table.add_row(
@@ -41,7 +43,9 @@ def print_skill_list(console: Console, skill_manager, session_context) -> None:
             skill.short_description,
             skill.source,
             "yes" if skill.catalog_visible else "no",
+            "yes" if skill.eligible else "no",
             "yes" if skill.name in active else "no",
+            skill.eligibility_reason or "-",
         )
 
     console.print(table)

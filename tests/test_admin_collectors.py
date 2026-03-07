@@ -176,6 +176,8 @@ def test_collect_skills_and_tools_expose_runtime_entries(
                         "name": "pdf",
                         "source": "repo",
                         "catalog_visible": True,
+                        "eligible": True,
+                        "eligibility_reason": None,
                         "body_line_count": 42,
                         "short_description": "Use for PDF tasks",
                     },
@@ -187,6 +189,8 @@ def test_collect_skills_and_tools_expose_runtime_entries(
                         "name": "db",
                         "source": "user",
                         "catalog_visible": True,
+                        "eligible": False,
+                        "eligibility_reason": "Requires config: db.enabled",
                         "body_line_count": 12,
                         "short_description": "Database helper",
                     },
@@ -264,8 +268,11 @@ def test_collect_skills_and_tools_expose_runtime_entries(
         assert skill_status["skills"][0]["name"] == "pdf"
         assert skill_status["skills"][0]["source"] == "repo"
         assert skill_status["skills"][0]["catalog_visible"] is True
+        assert skill_status["skills"][0]["eligible"] is True
         assert skill_status["skills"][0]["body_line_count"] == 42
         assert skill_status["skills"][0]["short_description"] == "Use for PDF tasks"
+        assert skill_status["skills"][1]["eligible"] is False
+        assert skill_status["skills"][1]["eligibility_reason"] == "Requires config: db.enabled"
 
         tools = collect_tools(app, session["id"])
         assert tools["kind"] == "ToolRegistryStateList"

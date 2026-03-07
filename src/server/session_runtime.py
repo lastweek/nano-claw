@@ -384,6 +384,8 @@ class SessionRuntime:
                     "name": skill.name,
                     "source": skill.source,
                     "catalog_visible": skill.catalog_visible,
+                    "eligible": skill.eligible,
+                    "eligibility_reason": skill.eligibility_reason,
                     "body_line_count": skill.body_line_count,
                     "short_description": skill.short_description,
                 }

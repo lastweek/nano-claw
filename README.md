@@ -17,6 +17,7 @@ It also includes a small localhost HTTP wrapper so you can drive the same repo-s
 ## What You Get
 
 - Built-in tools for `read_file`, `write_file`, `run_command`, `load_skill`, and `run_subagent`
+- Optional macOS helper tools for Finder, Calendar.app, and Notes.app when enabled
 - Streaming terminal UX with live activity updates while the model is thinking
 - Optional local HTTP/SSE server with a tiny browser UI for session-based turns
 - Slash commands for tools, skills, MCP servers, plans, subagents, and context usage
@@ -115,6 +116,8 @@ nano-claw uses the same tool-calling loop for built-in tools and MCP-provided to
 
 Skills are local instruction bundles stored in `SKILL.md`. nano-claw keeps a compact skill catalog in context and loads full skill bodies only when they are pinned, explicitly requested with `$skill-name`, or loaded through the `load_skill` tool.
 
+Skills can also declare runtime requirements in frontmatter. For example, repo-local macOS skills can require `darwin` plus `macos_tools.*` config flags, which keeps them visible in `/skill` while hiding them from the prompt catalog unless the local helper is actually available or has been explicitly disabled.
+
 Discovery roots:
 
 - `.nano-claw/skills`
@@ -182,10 +185,26 @@ Useful settings to know early:
 - `subagents.max_per_turn`
 - `context.auto_compact`
 - `plan.enabled`
+- `macos_tools.enabled`
 
 `logging.async_mode` routes session-log writes through a background transport while keeping the same on-disk log format. `subagents.max_parallel` caps concurrent child-agent threads independently from the per-turn delegation limit.
 By default, `server.db_path` points to `~/.nano-claw/state.db`.
 By default, `logging.log_dir` points to `~/.nano-claw/sessions`, and each session keeps its logs and memory files inside the same per-session directory.
+
+Example macOS helper config:
+
+```yaml
+macos_tools:
+  enabled: true
+  timeout_seconds: 10
+  enable_finder: true
+  enable_calendar: true
+  enable_notes: true
+  enable_reminders: true
+  enable_messages: true
+```
+
+On macOS, nano-claw enables bounded `finder_action`, `calendar_action`, `notes_action`, `reminders_action`, and `messages_action` tools by default. Set `macos_tools.enabled: false` to opt out. Unsupported platforms skip these tools at startup and report the platform reason in `TOOL_DEBUG=1` output. The first run on macOS may require granting Automation access in macOS System Settings. `messages_action.read_recent_messages` is best-effort because some chat objects do not expose readable history through the Messages scripting surface.
 
 Example MCP config:
 
