@@ -1,7 +1,7 @@
 """Tests for the local HTTP server config surface."""
 
 from src.config import Config
-from src.store.db import DEFAULT_HTTP_DB_PATH
+from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 
 
 def test_server_defaults(monkeypatch):
@@ -24,7 +24,7 @@ def test_server_defaults(monkeypatch):
 
     assert runtime_config.server.host == "127.0.0.1"
     assert runtime_config.server.port == 8765
-    assert runtime_config.server.db_path == DEFAULT_HTTP_DB_PATH
+    assert runtime_config.server.db_path == DEFAULT_HTTP_DATABASE_PATH
     assert runtime_config.server.max_parallel_runs == 1
     assert runtime_config.server.serve_ui is True
     assert runtime_config.server.sse_heartbeat_seconds == 10

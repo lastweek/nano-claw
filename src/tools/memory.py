@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.memory import SessionMemoryStore
+from src.memory import SessionMemory
 from src.tools import Tool, ToolResult
 
 
@@ -90,7 +90,7 @@ class MemoryReadTool(Tool):
         "required": ["target"],
     }
 
-    def __init__(self, memory_store: SessionMemoryStore) -> None:
+    def __init__(self, memory_store: SessionMemory) -> None:
         self.memory_store = memory_store
 
     def execute(self, context, **kwargs) -> ToolResult:
@@ -174,7 +174,7 @@ class MemorySearchTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, memory_store: SessionMemoryStore) -> None:
+    def __init__(self, memory_store: SessionMemory) -> None:
         self.memory_store = memory_store
 
     def execute(self, context, **kwargs) -> ToolResult:
@@ -282,7 +282,7 @@ class MemoryWriteTool(Tool):
         "required": ["action", "reason"],
     }
 
-    def __init__(self, memory_store: SessionMemoryStore) -> None:
+    def __init__(self, memory_store: SessionMemory) -> None:
         self.memory_store = memory_store
 
     def execute(self, context, **kwargs) -> ToolResult:

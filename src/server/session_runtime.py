@@ -20,7 +20,7 @@ from src.server.session_resources import (
     SessionResourcesFactory,
     build_session_resources,
 )
-from src.store.repository import AppStore, TurnRecord
+from src.database.session_database import SessionDatabase, TurnRecord
 
 
 class SessionBusyError(Exception):
@@ -54,20 +54,20 @@ class SessionRuntime:
         session_id: str,
         runtime_config: Config,
         repo_root: Path,
-        store: AppStore,
+        database: SessionDatabase,
         event_bus: TurnEventBus,
         resources_factory: SessionResourcesFactory = build_session_resources,
     ) -> None:
         self.session_id = session_id
         self.runtime_config = runtime_config
         self.repo_root = repo_root
-        self.store = store
+        self.database = database
         self.event_bus = event_bus
         self._resources: SessionResources = resources_factory(
             session_id,
             runtime_config,
             repo_root,
-            store,
+            database,
         )
         self._turn_queue: Queue[TurnWorkItem | object] = Queue()
         self._lock = Lock()
@@ -106,7 +106,7 @@ class SessionRuntime:
                 raise SessionClosedError(f"Session is closed: {self.session_id}")
             if self._active_turn_id is not None or self._pending_turn_count > 0:
                 raise SessionBusyError(f"Session is busy: {self.session_id}")
-            turn = self.store.create_turn(self.session_id, input_text)
+            turn = self.database.create_turn(self.session_id, input_text)
             self._pending_turn_count += 1
             self._turn_queue.put(TurnWorkItem(turn_id=turn.id, input_text=input_text))
 
@@ -230,17 +230,17 @@ class SessionRuntime:
         )
 
         if should_replace:
-            self.store.replace_session_snapshot(self.session_id, turn_id, self._resources.context)
+            self.database.replace_session_snapshot(self.session_id, turn_id, self._resources.context)
         else:
             try:
-                self.store.append_session_snapshot_delta(
+                self.database.append_session_snapshot_delta(
                     self.session_id,
                     turn_id,
                     self._resources.context,
                     persisted_message_count=self._persisted_message_count,
                 )
             except ValueError:
-                self.store.replace_session_snapshot(self.session_id, turn_id, self._resources.context)
+                self.database.replace_session_snapshot(self.session_id, turn_id, self._resources.context)
 
         self._persisted_message_count = current_message_count
         self._persisted_compaction_count = current_compaction_count
@@ -280,7 +280,7 @@ class SessionRuntime:
                 LOGGER.exception("Failed to close session resources for %s", self.session_id)
 
     def _run_turn(self, turn_id: str, input_text: str) -> None:
-        self.store.set_turn_running(turn_id)
+        self.database.set_turn_running(turn_id)
         self._emit_event(turn_id, "status", {"status": "running"})
         chunks: list[str] = []
         setattr(self._resources.context, "current_turn_id", turn_id)
@@ -299,11 +299,11 @@ class SessionRuntime:
         self._finish_turn_success(turn_id, final_output)
 
     def _finish_turn_success(self, turn_id: str, final_output: str) -> None:
-        self.store.finish_turn_success(turn_id, final_output=final_output)
+        self.database.finish_turn_success(turn_id, final_output=final_output)
         self._emit_event(turn_id, "done", {"final_output": final_output})
 
     def _finish_turn_failure(self, turn_id: str, error_text: str) -> None:
-        self.store.finish_turn_failure(turn_id, error_text=error_text)
+        self.database.finish_turn_failure(turn_id, error_text=error_text)
         self._emit_event(turn_id, "error", {"message": error_text})
 
     def _build_tool_snapshot(self) -> list[dict[str, Any]]:

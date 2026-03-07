@@ -1,4 +1,4 @@
-"""Managed Markdown session memory without cache or SQL indexing."""
+"""Managed session memory backed by Markdown files."""
 
 from __future__ import annotations
 
@@ -13,15 +13,15 @@ from typing import Any
 from uuid import uuid4
 
 from src.config import Config, config
-from src.memory.models import (
+from src.memory.types import (
     CuratedMemoryEntry,
     DailyMemoryEntry,
-    MemoryCandidate,
     MemoryPromptSelection,
     MemorySearchHit,
     MemorySettings,
+    MemoryWriteCandidate,
 )
-from src.memory.policy import evaluate_autonomous_write, evaluate_manual_write
+from src.memory.write_policy import evaluate_autonomous_write, evaluate_manual_write
 from src.session_paths import DEFAULT_SESSIONS_ROOT, resolve_session_dir, resolve_sessions_root
 from src.utils import resolve_path
 
@@ -81,8 +81,8 @@ def migrate_legacy_memory_root(memory_root: str | Path, repo_root: Path) -> str 
     return f"Migrated legacy repo-local memory from {legacy_memory_root} to {target_memory_root}."
 
 
-class SessionMemoryStore:
-    """Manage per-session Markdown memory files inside the shared sessions root."""
+class SessionMemory:
+    """Manage one session's memory workspace inside the shared sessions root."""
 
     def __init__(
         self,
@@ -186,7 +186,7 @@ class SessionMemoryStore:
         ]
         for entry in normalized_entries:
             decision = evaluate_manual_write(
-                MemoryCandidate(
+                MemoryWriteCandidate(
                     kind=entry.kind,
                     title=entry.title,
                     content=entry.content,
@@ -299,7 +299,7 @@ class SessionMemoryStore:
             raise ValueError("content is required")
         self._assert_write_allowed(session_id, actor=actor)
 
-        candidate = MemoryCandidate(
+        candidate = MemoryWriteCandidate(
             kind=normalized_kind,
             title=normalized_title,
             content=normalized_content,
@@ -404,7 +404,7 @@ class SessionMemoryStore:
             next_content = (content or entry.content).strip()
             if not next_title or not next_content:
                 raise ValueError("title and content are required")
-            candidate = MemoryCandidate(
+            candidate = MemoryWriteCandidate(
                 kind=entry.kind,
                 title=next_title,
                 content=next_content,
@@ -501,7 +501,7 @@ class SessionMemoryStore:
             next_content = content.strip()
             if not next_title or not next_content:
                 raise ValueError("title and content are required")
-            candidate = MemoryCandidate(
+            candidate = MemoryWriteCandidate(
                 kind=entry.kind,
                 title=next_title,
                 content=next_content,
@@ -638,7 +638,7 @@ class SessionMemoryStore:
         if not normalized_content:
             raise ValueError("content is required")
         self._assert_write_allowed(session_id, actor=actor)
-        candidate = MemoryCandidate(
+        candidate = MemoryWriteCandidate(
             kind="note",
             title=normalized_title,
             content=normalized_content,
@@ -769,7 +769,7 @@ class SessionMemoryStore:
             )
         return ordered_hits
 
-    def build_auto_memory_note(self, session_id: str, query: str) -> MemoryPromptSelection | None:
+    def build_prompt_memory(self, session_id: str, query: str) -> MemoryPromptSelection | None:
         if not self.is_enabled() or not self.runtime_config.memory.auto_load_memory:
             return None
         settings = self.get_settings(session_id)
@@ -810,7 +810,7 @@ class SessionMemoryStore:
             note = note[: max_chars - 1].rstrip() + "…"
         return MemoryPromptSelection(note=note, entries=included_entries)
 
-    def auto_save_turn(
+    def writeback_from_turn(
         self,
         session_id: str,
         *,
@@ -970,15 +970,15 @@ class SessionMemoryStore:
         if not settings.manual_write_enabled:
             raise ValueError("session memory mode does not allow manual writes")
 
-    def _evaluate_write_candidate(self, session_id: str, candidate: MemoryCandidate, *, actor: str):
+    def _evaluate_write_candidate(self, session_id: str, candidate: MemoryWriteCandidate, *, actor: str):
         settings = self.get_settings(session_id)
         if actor == "auto":
             return evaluate_autonomous_write(candidate, settings)
         return evaluate_manual_write(candidate, settings)
 
-    def _extract_auto_candidates(self, user_message: str, assistant_message: str) -> list[MemoryCandidate]:
+    def _extract_auto_candidates(self, user_message: str, assistant_message: str) -> list[MemoryWriteCandidate]:
         del user_message
-        candidates_by_key: dict[tuple[str, str], MemoryCandidate] = {}
+        candidates_by_key: dict[tuple[str, str], MemoryWriteCandidate] = {}
         for raw_line in assistant_message.splitlines():
             line = raw_line.strip()
             if not line:
@@ -991,7 +991,7 @@ class SessionMemoryStore:
             content = match.group("content").strip()
             if not title or not content:
                 continue
-            candidate = MemoryCandidate(
+            candidate = MemoryWriteCandidate(
                 kind=kind,
                 title=title,
                 content=content,
@@ -1302,7 +1302,7 @@ class SessionMemoryStore:
     def _parse_confidence(value: str | None) -> float | None:
         if value is None or value == "":
             return None
-        return SessionMemoryStore._normalize_confidence(float(value))
+        return SessionMemory._normalize_confidence(float(value))
 
     def _normalize_entry(
         self,
@@ -1384,4 +1384,4 @@ class SessionMemoryStore:
         return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-__all__ = ["SessionMemoryStore"]
+__all__ = ["SessionMemory"]

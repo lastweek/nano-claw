@@ -129,7 +129,7 @@ C4Context
     Container(cli, "CLI Interface", "/memory commands")
     Container(http_api, "HTTP Server", "REST API for memory operations")
 
-    Container(store, "SessionMemoryStore", "Core memory management")
+    Container(store, "SessionMemory", "Core memory management")
     ContainerDb(curated, "MEMORY.md", "Structured curated entries")
     ContainerDb(daily, "daily/*.md", "Append-only daily logs")
     ContainerDb(settings, "memory-settings.json", "Per-session config")
@@ -192,7 +192,7 @@ graph TD
 sequenceDiagram
     participant User
     participant CLI as CLI/HTTP
-    participant Store as SessionMemoryStore
+    participant Store as SessionMemory
     participant Policy as Policy Layer
     participant FS as Filesystem
 
@@ -207,7 +207,7 @@ sequenceDiagram
 
     Note over User,FS: Automatic retrieval during turn
     User->>CLI: Ask about X
-    CLI->>Store: build_auto_memory_note(query="X")
+    CLI->>Store: build_prompt_memory(query="X")
     Store->>FS: read and parse MEMORY.md
     Store->>Store: rank entries by relevance
     Store-->>CLI: MemoryPromptSelection(entries=[...])
@@ -348,13 +348,13 @@ class MemoryPromptSelection:
     entries: list[CuratedMemoryEntry]  # Selected entries
 ```
 
-#### MemoryCandidate
+#### MemoryWriteCandidate
 
 Proposed memory extracted from turn outcome:
 
 ```python
 @dataclass(frozen=True)
-class MemoryCandidate:
+class MemoryWriteCandidate:
     """Candidate long-term memory extracted from a turn outcome."""
 
     kind: MemoryKind
@@ -366,12 +366,12 @@ class MemoryCandidate:
     last_verified_at: str | None = None
 ```
 
-### 2. SessionMemoryStore ([src/memory/store.py](src/memory/store.py))
+### 2. SessionMemory ([src/memory/session_memory.py](src/memory/session_memory.py))
 
-The core `SessionMemoryStore` class provides all memory operations:
+The core `SessionMemory` class provides all memory operations:
 
 ```python
-class SessionMemoryStore:
+class SessionMemory:
     def __init__(
         self,
         repo_root: Path,
@@ -412,13 +412,13 @@ class MemoryPolicyDecision:
     reason: str
 
 def evaluate_manual_write(
-    candidate: MemoryCandidate,
+    candidate: MemoryWriteCandidate,
     settings: MemorySettings
 ) -> MemoryPolicyDecision:
     """Validate explicit human/tool/API writes."""
 
 def evaluate_autonomous_write(
-    candidate: MemoryCandidate,
+    candidate: MemoryWriteCandidate,
     settings: MemorySettings
 ) -> MemoryPolicyDecision:
     """Validate conservative autonomous writeback candidates."""
@@ -876,7 +876,7 @@ def search(
 The system automatically injects relevant memory entries into each turn:
 
 ```python
-def build_auto_memory_note(
+def build_prompt_memory(
     session_id: str,
     query: str,
 ) -> MemoryPromptSelection | None:
@@ -913,7 +913,7 @@ Session memory:
 
 ```python
 # User query: "How should I deploy?"
-selection = store.build_auto_memory_note(session_id, query="deploy")
+selection = store.build_prompt_memory(session_id, query="deploy")
 
 # Returns:
 # MemoryPromptSelection(
@@ -934,7 +934,7 @@ Memory is integrated into each turn's preparation:
 def prepare_turn_input(
     user_message: str,
     context,
-    memory_store: SessionMemoryStore | None,
+    memory_store: SessionMemory | None,
     runtime_config: Config,
 ) -> PreparedTurnInput:
     # Build memory note for injection
@@ -942,7 +942,7 @@ def prepare_turn_input(
     memory_entry_ids = None
 
     if memory_store and memory_store.is_enabled():
-        selection = memory_store.build_auto_memory_note(
+        selection = memory_store.build_prompt_memory(
             context.session_id,
             query=user_message,
         )
@@ -990,7 +990,7 @@ def build_conversation_messages(
 After each turn, the system extracts memory candidates from the assistant's response:
 
 ```python
-def auto_save_turn(
+def writeback_from_turn(
     session_id: str,
     turn_id: str,
     user_message: str,
@@ -1878,14 +1878,14 @@ token bucket algorithm. Ensure rate limits are respected during deploy.
 ```python
 # Extracted candidates
 candidates = [
-    MemoryCandidate(
+    MemoryWriteCandidate(
         kind="decision",
         title="deploy-order",
         content="Run migrations before deploying services...",
         source="assistant_auto",
         confidence=0.85,
     ),
-    MemoryCandidate(
+    MemoryWriteCandidate(
         kind="fact",
         title="api-rate-limits",
         content="The API uses 100 req/min per user...",
@@ -1895,7 +1895,7 @@ candidates = [
 ]
 
 # Validated and saved to memory
-entries = memory_store.auto_save_turn(
+entries = memory_store.writeback_from_turn(
     session_id="my_session",
     turn_id="turn_123",
     user_message="What's the deploy procedure?",
@@ -2010,13 +2010,13 @@ Enable sharing memory across sessions:
 
 ```python
 # Global memory accessible from all sessions
-global_memory = SessionMemoryStore(
+global_memory = SessionMemory(
     repo_root=global_root,
     scope="global",
 )
 
 # Session-specific memory with global fallback
-session_memory = SessionMemoryStore(
+session_memory = SessionMemory(
     repo_root=session_root,
     parent=global_memory,
 )

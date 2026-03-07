@@ -6,14 +6,20 @@ from src.agent import Agent
 from src.agent_turn_prep import build_conversation_messages, prepare_turn_input
 from src.commands import CommandRegistry, builtin
 from src.context import Context
-from src.memory import SessionMemoryStore
+from src.memory import MemoryWriteCandidate, SessionMemory
 from src.tools import ToolRegistry
 from src.tools.memory import MemoryReadTool, MemorySearchTool, MemoryWriteTool
 
 
 def _make_store(temp_dir, http_runtime_config):
     http_runtime_config.memory.enabled = True
-    return SessionMemoryStore(repo_root=temp_dir, runtime_config=http_runtime_config)
+    return SessionMemory(repo_root=temp_dir, runtime_config=http_runtime_config)
+
+
+def test_memory_package_exports_new_public_names():
+    """The memory package should expose the renamed public API."""
+    assert SessionMemory.__name__ == "SessionMemory"
+    assert MemoryWriteCandidate.__name__ == "MemoryWriteCandidate"
 
 
 class _DummyLLM:
@@ -174,7 +180,7 @@ def test_archived_and_superseded_entries_are_filtered_from_default_retrieval(tem
     hits = store.search("sess_lifecycle", query="provider", include_daily=False)
     assert hits == []
 
-    selection = store.build_auto_memory_note("sess_lifecycle", "deploy")
+    selection = store.build_prompt_memory("sess_lifecycle", "deploy")
     assert selection is not None
     assert [entry.entry_id for entry in selection.entries] == [replacement.entry_id]
     assert "deploy-order v2" in selection.note
@@ -202,7 +208,7 @@ def test_daily_logs_are_searchable_but_not_auto_injected(temp_dir, http_runtime_
     hits = store.search("sess_daily", query="evidence", include_daily=True)
     assert any(hit.scope == "daily" for hit in hits)
 
-    selection = store.build_auto_memory_note("sess_daily", "evidence")
+    selection = store.build_prompt_memory("sess_daily", "evidence")
     assert selection is None
 
 
@@ -277,7 +283,7 @@ def test_manual_only_and_auto_modes_control_autonomous_writeback(temp_dir, http_
     """Autonomous writeback should respect the per-session memory mode."""
     store = _make_store(temp_dir, http_runtime_config)
 
-    manual_only_saved = store.auto_save_turn(
+    manual_only_saved = store.writeback_from_turn(
         "sess_mode",
         turn_id="turn_manual",
         user_message="Remember deploy order",
@@ -286,7 +292,7 @@ def test_manual_only_and_auto_modes_control_autonomous_writeback(temp_dir, http_
     assert manual_only_saved == []
 
     store.update_settings("sess_mode", mode="auto")
-    saved = store.auto_save_turn(
+    saved = store.writeback_from_turn(
         "sess_mode",
         turn_id="turn_auto",
         user_message="Remember deploy order",
@@ -301,13 +307,13 @@ def test_repeated_auto_corrections_converge_to_latest_active_fact(temp_dir, http
     store = _make_store(temp_dir, http_runtime_config)
     store.update_settings("sess_correction", mode="auto")
 
-    first = store.auto_save_turn(
+    first = store.writeback_from_turn(
         "sess_correction",
         turn_id="turn_1",
         user_message="What is deploy order?",
         assistant_message="Fact: deploy-order :: Run migrations before deploy.",
     )
-    second = store.auto_save_turn(
+    second = store.writeback_from_turn(
         "sess_correction",
         turn_id="turn_2",
         user_message="Actually revise that",

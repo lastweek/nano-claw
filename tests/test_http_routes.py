@@ -171,7 +171,7 @@ def test_create_session_rolls_back_persisted_state_when_runtime_init_fails(
         response = client.post("/api/v1/sessions", json={"title": "broken"})
         assert response.status_code == 500
         assert response.json()["detail"] == "Failed to initialize session runtime: synthetic init failure"
-        assert app.state.store.list_sessions() == []
+        assert app.state.database.list_sessions() == []
 
 
 def test_memory_routes_expose_file_backed_session_memory(temp_dir, http_runtime_config, patch_http_runtime):

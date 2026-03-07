@@ -1,4 +1,4 @@
-"""Persistent session and turn storage for the local HTTP runtime."""
+"""Persistent session and turn storage for the local HTTP database runtime."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 import uuid
 
 from src.context import CompactedContextSummary, Context
-from src.store.db import initialize_db, managed_db_connection
+from src.database.connection import initialize_database, managed_database_connection
 from src.utils import utc_now
 
 
@@ -77,21 +77,21 @@ class SessionSnapshot:
     summary_json: dict | None
 
 
-class AppStore:
-    """SQLite-backed state repository for HTTP sessions and turns."""
+class SessionDatabase:
+    """SQLite-backed session database for HTTP sessions and turns."""
 
     def __init__(self, db_path: Path):
         self.db_path = db_path.resolve()
         self._write_lock = Lock()
 
-    def init_db(self) -> None:
+    def initialize(self) -> None:
         """Initialize the database schema and migrations."""
-        initialize_db(self.db_path)
+        initialize_database(self.db_path)
 
     def mark_incomplete_turns_failed(self) -> int:
         """Mark orphaned queued/running turns as failed after a restart."""
         now = utc_now()
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             cursor = connection.execute(
                 """
                 UPDATE turns
@@ -118,7 +118,7 @@ class AppStore:
             created_at=now,
             updated_at=now,
         )
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             connection.execute(
                 """
                 INSERT INTO sessions(id, title, summary_text, summary_json, state, closed_at, created_at, updated_at)
@@ -141,7 +141,7 @@ class AppStore:
     def close_session(self, session_id: str) -> SessionRecord:
         """Mark one session closed. Idempotent for already-closed sessions."""
         now = utc_now()
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             cursor = connection.execute(
                 """
                 UPDATE sessions
@@ -155,14 +155,14 @@ class AppStore:
             connection.commit()
             if cursor.rowcount == 0:
                 raise KeyError(f"Unknown session: {session_id}")
-        session = self.get_session_record(session_id)
+        session = self.get_session(session_id)
         if session is None:
             raise KeyError(f"Unknown session: {session_id}")
         return session
 
-    def delete_session_record(self, session_id: str) -> None:
+    def delete_session(self, session_id: str) -> None:
         """Delete one persisted session and any associated transcript/turn rows."""
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             connection.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
             connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
@@ -170,7 +170,7 @@ class AppStore:
 
     def list_sessions(self) -> list[SessionRecord]:
         """Return persisted sessions ordered newest first."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             rows = connection.execute(
                 """
                 SELECT id, title, summary_text, state, closed_at, created_at, updated_at
@@ -182,15 +182,15 @@ class AppStore:
 
     def list_active_session_ids(self) -> list[str]:
         """Return active session identifiers."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             rows = connection.execute(
                 "SELECT id FROM sessions WHERE state = 'active' ORDER BY created_at ASC"
             ).fetchall()
         return [str(row["id"]) for row in rows]
 
-    def get_session_record(self, session_id: str) -> SessionRecord | None:
+    def get_session(self, session_id: str) -> SessionRecord | None:
         """Return one session row or None."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             row = connection.execute(
                 """
                 SELECT id, title, summary_text, state, closed_at, created_at, updated_at
@@ -216,7 +216,7 @@ class AppStore:
             ended_at=None,
             updated_at=now,
         )
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             self._require_active_session(connection, session_id)
             connection.execute(
                 """
@@ -249,7 +249,7 @@ class AppStore:
     def set_turn_running(self, turn_id: str) -> None:
         """Mark one queued turn as running."""
         now = utc_now()
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             cursor = connection.execute(
                 """
                 UPDATE turns
@@ -267,7 +267,7 @@ class AppStore:
     def finish_turn_success(self, turn_id: str, *, final_output: str) -> None:
         """Mark one turn completed."""
         now = utc_now()
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             cursor = connection.execute(
                 """
                 UPDATE turns
@@ -287,7 +287,7 @@ class AppStore:
     def finish_turn_failure(self, turn_id: str, *, error_text: str) -> None:
         """Mark one turn failed."""
         now = utc_now()
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             cursor = connection.execute(
                 """
                 UPDATE turns
@@ -305,7 +305,7 @@ class AppStore:
 
     def get_turn(self, turn_id: str) -> TurnRecord | None:
         """Return one persisted turn or None."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             row = connection.execute(
                 """
                 SELECT id, session_id, status, input_text, final_output, error_text,
@@ -357,7 +357,7 @@ class AppStore:
         """
         params.extend([normalized_limit + 1, offset])
 
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             rows = connection.execute(query, tuple(params)).fetchall()
 
         has_more = len(rows) > normalized_limit
@@ -367,7 +367,7 @@ class AppStore:
 
     def get_session_detail(self, session_id: str) -> SessionDetail | None:
         """Return one expanded session detail view or None."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             session_snapshot = self._read_session_snapshot(connection, session_id)
             if session_snapshot is None:
                 return None
@@ -393,7 +393,7 @@ class AppStore:
 
     def get_session_snapshot(self, session_id: str) -> SessionSnapshot | None:
         """Return one lightweight session snapshot for runtime hydration."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             return self._read_session_snapshot(connection, session_id)
 
     def replace_session_snapshot(self, session_id: str, turn_id: str, context: Context) -> None:
@@ -402,7 +402,7 @@ class AppStore:
         messages = self._filter_transcript_messages(context.get_messages())
         now = utc_now()
 
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             session_cursor = connection.execute(
                 """
                 UPDATE sessions
@@ -444,7 +444,7 @@ class AppStore:
         new_messages = messages[persisted_message_count:]
         now = utc_now()
 
-        with self._write_lock, managed_db_connection(self.db_path) as connection:
+        with self._write_lock, managed_database_connection(self.db_path) as connection:
             session_cursor = connection.execute(
                 """
                 UPDATE sessions
@@ -470,7 +470,7 @@ class AppStore:
 
     def count_turns_by_status(self) -> dict[str, int]:
         """Return aggregate turn counts keyed by status."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             rows = connection.execute(
                 """
                 SELECT status, COUNT(*) AS count
@@ -482,7 +482,7 @@ class AppStore:
 
     def count_messages_by_session(self) -> dict[str, int]:
         """Return message counts keyed by session id."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             rows = connection.execute(
                 """
                 SELECT session_id, COUNT(*) AS count
@@ -494,7 +494,7 @@ class AppStore:
 
     def count_turns_by_session(self) -> dict[str, int]:
         """Return turn counts keyed by session id."""
-        with managed_db_connection(self.db_path) as connection:
+        with managed_database_connection(self.db_path) as connection:
             rows = connection.execute(
                 """
                 SELECT session_id, COUNT(*) AS count
@@ -623,7 +623,7 @@ class AppStore:
         return persisted
 
 
-def deserialize_summary(payload: dict | None) -> CompactedContextSummary | None:
+def deserialize_session_summary(payload: dict | None) -> CompactedContextSummary | None:
     """Rebuild compacted summary dataclass from stored JSON."""
     if payload is None:
         return None

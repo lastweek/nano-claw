@@ -44,7 +44,7 @@ def prepare_turn_input(
 
     if skill_manager is None:
         if memory_store is not None and runtime_config is not None:
-            selection = memory_store.build_auto_memory_note(
+            selection = memory_store.build_prompt_memory(
                 context.session_id,
                 normalized_user_message,
             )
@@ -121,7 +121,7 @@ def prepare_turn_input(
         )
 
     if memory_store is not None and runtime_config is not None:
-        selection = memory_store.build_auto_memory_note(
+        selection = memory_store.build_prompt_memory(
             context.session_id,
             normalized_user_message,
         )

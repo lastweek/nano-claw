@@ -1,4 +1,4 @@
-"""SQLite helpers for the local HTTP runtime."""
+"""SQLite connection helpers for the local HTTP session database."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ import sqlite3
 from pathlib import Path
 from typing import Iterator
 
-from src.store.migrations import apply_schema_migrations
+from src.database.migrations import apply_schema_migrations
 
-DEFAULT_HTTP_DB_PATH = "~/.nano-claw/state.db"
-LEGACY_HTTP_DB_PATH = ".nano-claw/state.db"
+DEFAULT_HTTP_DATABASE_PATH = "~/.nano-claw/state.db"
+LEGACY_HTTP_DATABASE_PATH = ".nano-claw/state.db"
 DB_ARTIFACT_SUFFIXES = ("", "-wal", "-shm")
 
 SCHEMA_STATEMENTS = (
@@ -64,21 +64,21 @@ def _db_artifact_paths(db_path: Path) -> tuple[Path, ...]:
     return tuple(Path(f"{db_path}{suffix}") for suffix in DB_ARTIFACT_SUFFIXES)
 
 
-def resolve_http_db_path(db_path: str | Path, repo_root: Path) -> Path:
-    """Resolve the configured HTTP DB path with home-directory expansion."""
+def resolve_http_database_path(db_path: str | Path, repo_root: Path) -> Path:
+    """Resolve the configured HTTP database path with home-directory expansion."""
     path_obj = Path(db_path).expanduser()
     if not path_obj.is_absolute():
         path_obj = repo_root / path_obj
     return path_obj.resolve()
 
 
-def migrate_legacy_http_db(db_path: Path, repo_root: Path) -> str | None:
-    """Move the legacy repo-local DB into the default global location when safe."""
-    default_global_db_path = resolve_http_db_path(DEFAULT_HTTP_DB_PATH, repo_root)
+def migrate_legacy_http_database(db_path: Path, repo_root: Path) -> str | None:
+    """Move the legacy repo-local database into the default global location when safe."""
+    default_global_db_path = resolve_http_database_path(DEFAULT_HTTP_DATABASE_PATH, repo_root)
     if db_path != default_global_db_path:
         return None
 
-    legacy_db_path = (repo_root / LEGACY_HTTP_DB_PATH).resolve()
+    legacy_db_path = (repo_root / LEGACY_HTTP_DATABASE_PATH).resolve()
     legacy_artifacts = _db_artifact_paths(legacy_db_path)
     target_artifacts = _db_artifact_paths(db_path)
     if not any(path.exists() for path in legacy_artifacts):
@@ -98,7 +98,7 @@ def migrate_legacy_http_db(db_path: Path, repo_root: Path) -> str | None:
     return f"Migrated legacy repo-local DB from {legacy_db_path} to {db_path}."
 
 
-def connect_db(db_path: Path) -> sqlite3.Connection:
+def connect_database(db_path: Path) -> sqlite3.Connection:
     """Open one SQLite connection with repo-friendly defaults."""
     connection = sqlite3.connect(db_path, timeout=30.0, check_same_thread=False)
     connection.row_factory = sqlite3.Row
@@ -108,19 +108,19 @@ def connect_db(db_path: Path) -> sqlite3.Connection:
 
 
 @contextmanager
-def managed_db_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
+def managed_database_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
     """Open one SQLite connection and always close it when done."""
-    connection = connect_db(db_path)
+    connection = connect_database(db_path)
     try:
         yield connection
     finally:
         connection.close()
 
 
-def initialize_db(db_path: Path) -> None:
+def initialize_database(db_path: Path) -> None:
     """Create database directories and initialize the schema."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with managed_db_connection(db_path) as connection:
+    with managed_database_connection(db_path) as connection:
         apply_schema_migrations(connection)
         for statement in SCHEMA_STATEMENTS:
             connection.execute(statement)

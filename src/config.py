@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from src.store.db import DEFAULT_HTTP_DB_PATH
+from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 from src.utils import env_truthy
 
 
@@ -198,7 +198,7 @@ class ServerConfig(BaseSettings):
 
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)
-    db_path: str = Field(default=DEFAULT_HTTP_DB_PATH)
+    db_path: str = Field(default=DEFAULT_HTTP_DATABASE_PATH)
     max_parallel_runs: int = Field(default=1, ge=1)
     serve_ui: bool = Field(default=True)
     sse_heartbeat_seconds: int = Field(default=10, ge=1)

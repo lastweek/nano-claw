@@ -12,7 +12,7 @@ from src.server.event_bus import TurnEventBus
 from src.server.session_registry import SessionRegistry
 from src.server.session_resources import SessionResources, build_session_resources
 from src.server.session_runtime import SessionRuntime
-from src.store.repository import AppStore
+from src.database.session_database import SessionDatabase
 
 
 class _FakeLogger:
@@ -56,7 +56,7 @@ def test_build_session_resources_hydrates_context_from_snapshot(
     temp_dir,
     http_runtime_config,
 ):
-    """Session resources should hydrate transcript and summary from the store snapshot."""
+    """Session resources should hydrate transcript and summary from the database snapshot."""
 
     class FakeAgent:
         def __init__(self, _llm, _tool_registry, context, **_kwargs) -> None:
@@ -76,10 +76,10 @@ def test_build_session_resources_hydrates_context_from_snapshot(
     monkeypatch.setattr("src.server.session_resources.SessionLogger", lambda *_args, **_kwargs: _FakeLogger())
     monkeypatch.setattr("src.server.session_resources.Agent", FakeAgent)
 
-    store = AppStore(temp_dir / "state.db")
-    store.init_db()
-    session = store.create_session("Hydrate")
-    turn = store.create_turn(session.id, "hello")
+    database = SessionDatabase(temp_dir / "state.db")
+    database.initialize()
+    session = database.create_session("Hydrate")
+    turn = database.create_turn(session.id, "hello")
 
     context = Context(cwd=temp_dir, session_id=session.id)
     context.messages = [
@@ -96,9 +96,9 @@ def test_build_session_resources_hydrates_context_from_snapshot(
             payload={"origin": "test"},
         )
     )
-    store.replace_session_snapshot(session.id, turn.id, context)
+    database.replace_session_snapshot(session.id, turn.id, context)
 
-    resources = build_session_resources(session.id, http_runtime_config, temp_dir, store)
+    resources = build_session_resources(session.id, http_runtime_config, temp_dir, database)
 
     assert [message["content"] for message in resources.context.get_messages()] == [
         "hello",
@@ -145,16 +145,16 @@ def test_build_session_resources_failure_closes_mcp_and_logger(
     monkeypatch.setattr("src.server.session_resources.SessionLogger", fake_logger_factory)
     monkeypatch.setattr("src.server.session_resources.Agent", failing_agent)
 
-    store = AppStore(temp_dir / "state.db")
-    store.init_db()
-    session = store.create_session("HTTP")
+    database = SessionDatabase(temp_dir / "state.db")
+    database.initialize()
+    session = database.create_session("HTTP")
 
     with pytest.raises(RuntimeError, match="synthetic runtime build failure"):
         build_session_resources(
             session.id,
             http_runtime_config,
             temp_dir,
-            store,
+            database,
         )
 
     assert fake_mcp.closed_count == 1
@@ -172,15 +172,15 @@ def test_session_registry_ensure_runtime_is_lazy_and_idempotent(temp_dir, http_r
         def close(self, status: str = "completed") -> None:
             self.closed_statuses.append(status)
 
-    store = AppStore(temp_dir / "state.db")
-    store.init_db()
-    session = store.create_session("Registry")
+    database = SessionDatabase(temp_dir / "state.db")
+    database.initialize()
+    session = database.create_session("Registry")
     build_calls: list[str] = []
 
-    def fake_resources_factory(session_id, runtime_config, repo_root, app_store):
+    def fake_resources_factory(session_id, runtime_config, repo_root, session_database):
         build_calls.append(session_id)
         assert runtime_config is http_runtime_config
-        assert app_store is store
+        assert session_database is database
         return SessionResources(
             agent=SimpleNamespace(run_stream=lambda _input: iter(()), request_metrics=[]),
             context=Context(cwd=repo_root, session_id=session_id),
@@ -191,7 +191,7 @@ def test_session_registry_ensure_runtime_is_lazy_and_idempotent(temp_dir, http_r
     registry = SessionRegistry(
         runtime_config=http_runtime_config,
         repo_root=temp_dir,
-        store=store,
+        database=database,
         event_bus=TurnEventBus(),
         resources_factory=fake_resources_factory,
     )
@@ -212,12 +212,12 @@ def test_session_registry_ensure_runtime_coalesces_concurrent_builds(temp_dir, h
         def close(self, status: str = "completed") -> None:
             return
 
-    store = AppStore(temp_dir / "state.db")
-    store.init_db()
-    session = store.create_session("ConcurrentRegistry")
+    database = SessionDatabase(temp_dir / "state.db")
+    database.initialize()
+    session = database.create_session("ConcurrentRegistry")
     build_calls: list[str] = []
 
-    def fake_resources_factory(session_id, runtime_config, repo_root, app_store):
+    def fake_resources_factory(session_id, runtime_config, repo_root, session_database):
         build_calls.append(session_id)
         time.sleep(0.05)
         return SessionResources(
@@ -230,7 +230,7 @@ def test_session_registry_ensure_runtime_coalesces_concurrent_builds(temp_dir, h
     registry = SessionRegistry(
         runtime_config=http_runtime_config,
         repo_root=temp_dir,
-        store=store,
+        database=database,
         event_bus=TurnEventBus(),
         resources_factory=fake_resources_factory,
     )
@@ -285,15 +285,15 @@ def test_session_runtime_close_times_out_when_worker_is_stuck(
 
     monkeypatch.setattr("src.server.session_runtime.SESSION_RUNTIME_CLOSE_TIMEOUT_SECONDS", 0.01)
 
-    store = AppStore(temp_dir / "state.db")
-    store.init_db()
-    session = store.create_session("BlockingRuntime")
+    database = SessionDatabase(temp_dir / "state.db")
+    database.initialize()
+    session = database.create_session("BlockingRuntime")
 
     runtime = SessionRuntime(
         session_id=session.id,
         runtime_config=http_runtime_config,
         repo_root=temp_dir,
-        store=store,
+        database=database,
         event_bus=TurnEventBus(),
         resources_factory=lambda session_id, _config, repo_root, _store: SessionResources(
             agent=BlockingAgent(),

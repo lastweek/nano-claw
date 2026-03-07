@@ -22,7 +22,7 @@ from rich.live import Live
 
 from src.context import Context
 from src.llm import LLMClient
-from src.memory import SessionMemoryStore
+from src.memory import SessionMemory
 from src.metrics import LLMMetrics
 from src.session_runtime import SessionRuntimeController
 from src.tools import (
@@ -486,7 +486,7 @@ def build_agent_runtime(
         runtime_config=runtime_config,
         skill_debug=skill_debug,
     )
-    memory_store = SessionMemoryStore(repo_root=cwd, runtime_config=runtime_config)
+    memory_store = SessionMemory(repo_root=cwd, runtime_config=runtime_config)
 
     llm_client = LLMClient(runtime_config=runtime_config)
     mcp_manager = build_mcp_manager(console, runtime_config)

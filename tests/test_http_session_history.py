@@ -5,7 +5,7 @@ import time
 from fastapi.testclient import TestClient
 
 from src.server.app import create_app
-from src.store.repository import AppStore
+from src.database.session_database import SessionDatabase
 
 
 def wait_for_turn(client: TestClient, turn_id: str, timeout: float = 2.0) -> dict:
@@ -50,12 +50,12 @@ def test_http_session_snapshot_matches_compacted_context(temp_dir, http_runtime_
 
 def test_server_startup_marks_incomplete_turns_failed(temp_dir, http_runtime_config, patch_http_runtime):
     """Creating the app should fail stale queued/running turns from prior processes."""
-    store = AppStore(temp_dir / "state.db")
-    store.init_db()
-    session = store.create_session("Restart")
-    queued = store.create_turn(session.id, "queued")
-    running = store.create_turn(session.id, "running")
-    store.set_turn_running(running.id)
+    database = SessionDatabase(temp_dir / "state.db")
+    database.initialize()
+    session = database.create_session("Restart")
+    queued = database.create_turn(session.id, "queued")
+    running = database.create_turn(session.id, "running")
+    database.set_turn_running(running.id)
 
     app = create_app(
         runtime_config=http_runtime_config,
@@ -64,8 +64,8 @@ def test_server_startup_marks_incomplete_turns_failed(temp_dir, http_runtime_con
     with TestClient(app):
         pass
 
-    assert store.get_turn(queued.id).status == "failed"
-    assert store.get_turn(running.id).status == "failed"
+    assert database.get_turn(queued.id).status == "failed"
+    assert database.get_turn(running.id).status == "failed"
 
 
 def test_cold_restart_lazy_runtime_rehydration(temp_dir, http_runtime_config, patch_http_runtime):
@@ -106,8 +106,8 @@ def test_http_non_compaction_turns_use_append_snapshot_path(
 
     append_calls = 0
     replace_calls = 0
-    original_append = app.state.store.append_session_snapshot_delta
-    original_replace = app.state.store.replace_session_snapshot
+    original_append = app.state.database.append_session_snapshot_delta
+    original_replace = app.state.database.replace_session_snapshot
 
     def append_wrapper(*args, **kwargs):
         nonlocal append_calls
@@ -119,8 +119,8 @@ def test_http_non_compaction_turns_use_append_snapshot_path(
         replace_calls += 1
         return original_replace(*args, **kwargs)
 
-    app.state.store.append_session_snapshot_delta = append_wrapper
-    app.state.store.replace_session_snapshot = replace_wrapper
+    app.state.database.append_session_snapshot_delta = append_wrapper
+    app.state.database.replace_session_snapshot = replace_wrapper
 
     with TestClient(app) as client:
         session = client.post("/api/v1/sessions", json={"title": "HTTP"}).json()
@@ -153,8 +153,8 @@ def test_http_compaction_turn_uses_replace_snapshot_path(
 
     append_calls = 0
     replace_calls = 0
-    original_append = app.state.store.append_session_snapshot_delta
-    original_replace = app.state.store.replace_session_snapshot
+    original_append = app.state.database.append_session_snapshot_delta
+    original_replace = app.state.database.replace_session_snapshot
 
     def append_wrapper(*args, **kwargs):
         nonlocal append_calls
@@ -166,8 +166,8 @@ def test_http_compaction_turn_uses_replace_snapshot_path(
         replace_calls += 1
         return original_replace(*args, **kwargs)
 
-    app.state.store.append_session_snapshot_delta = append_wrapper
-    app.state.store.replace_session_snapshot = replace_wrapper
+    app.state.database.append_session_snapshot_delta = append_wrapper
+    app.state.database.replace_session_snapshot = replace_wrapper
 
     with TestClient(app) as client:
         session = client.post("/api/v1/sessions", json={"title": "HTTP"}).json()

@@ -9,7 +9,7 @@ from src.config import Config
 from src.server.event_bus import TurnEventBus
 from src.server.session_resources import SessionResourcesFactory, build_session_resources
 from src.server.session_runtime import SessionClosedError, SessionRuntime
-from src.store.repository import AppStore
+from src.database.session_database import SessionDatabase
 
 
 class SessionRegistry:
@@ -20,13 +20,13 @@ class SessionRegistry:
         *,
         runtime_config: Config,
         repo_root: Path,
-        store: AppStore,
+        database: SessionDatabase,
         event_bus: TurnEventBus,
         resources_factory: SessionResourcesFactory = build_session_resources,
     ) -> None:
         self._runtime_config = runtime_config
         self._repo_root = repo_root
-        self._store = store
+        self._database = database
         self._event_bus = event_bus
         self._resources_factory = resources_factory
         self._lock = Lock()
@@ -68,7 +68,7 @@ class SessionRegistry:
                 session_id=session_id,
                 runtime_config=self._runtime_config,
                 repo_root=self._repo_root,
-                store=self._store,
+                database=self._database,
                 event_bus=self._event_bus,
                 resources_factory=self._resources_factory,
             )
@@ -128,7 +128,7 @@ class SessionRegistry:
         return snapshots
 
     def _require_active_session(self, session_id: str) -> None:
-        session = self._store.get_session_record(session_id)
+        session = self._database.get_session(session_id)
         if session is None:
             raise KeyError(f"Unknown session: {session_id}")
         if session.state != "active":

@@ -13,7 +13,7 @@ from src.cli.serve import (
     _GracefulUvicornServer,
     run_serve_command,
 )
-from src.store.db import DEFAULT_HTTP_DB_PATH
+from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 
 
 def test_run_serve_command_prints_access_urls_and_paths(
@@ -31,7 +31,7 @@ def test_run_serve_command_prints_access_urls_and_paths(
 
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.chdir(temp_dir)
-    monkeypatch.setattr(http_runtime_config.server, "db_path", DEFAULT_HTTP_DB_PATH)
+    monkeypatch.setattr(http_runtime_config.server, "db_path", DEFAULT_HTTP_DATABASE_PATH)
     monkeypatch.setitem(
         sys.modules,
         "src.server.app",

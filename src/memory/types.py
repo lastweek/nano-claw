@@ -1,4 +1,4 @@
-"""Typed models for managed Markdown session memory."""
+"""Typed data structures for managed Markdown session memory."""
 
 from __future__ import annotations
 
@@ -85,8 +85,8 @@ class MemoryPromptSelection:
 
 
 @dataclass(frozen=True)
-class MemoryCandidate:
-    """Candidate long-term memory extracted from a turn outcome."""
+class MemoryWriteCandidate:
+    """Candidate durable memory extracted before persistence."""
 
     kind: MemoryKind
     title: str
@@ -100,7 +100,7 @@ class MemoryCandidate:
 __all__ = [
     "CuratedMemoryEntry",
     "DailyMemoryEntry",
-    "MemoryCandidate",
+    "MemoryWriteCandidate",
     "MemoryKind",
     "MemoryMode",
     "MemoryPromptSelection",

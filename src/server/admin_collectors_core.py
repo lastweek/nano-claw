@@ -1,4 +1,4 @@
-"""Core admin resource collectors that read app/store state directly."""
+"""Core admin resource collectors that read app/database state directly."""
 
 from __future__ import annotations
 
@@ -9,19 +9,19 @@ from fastapi import FastAPI
 
 from src.server.admin_redaction import preview_text, redact_config_object
 from src.server.admin_schemas import build_list_resource, build_resource
-from src.store.repository import AppStore, TurnRecord
+from src.database.session_database import SessionDatabase, TurnRecord
 from src.utils import resolve_path
 
 
 def collect_server_overview(app: FastAPI) -> dict[str, Any]:
     """Collect one ServerOverview resource."""
-    store: AppStore = app.state.store
-    sessions = store.list_sessions()
+    database: SessionDatabase = app.state.database
+    sessions = database.list_sessions()
     session_state_counts: dict[str, int] = {}
     for session in sessions:
         session_state_counts[session.state] = session_state_counts.get(session.state, 0) + 1
 
-    turn_status_counts = store.count_turns_by_status()
+    turn_status_counts = database.count_turns_by_status()
     runtime_snapshots = app.state.session_registry.snapshot_all_runtimes()
     busy_runtime_count = sum(1 for snapshot in runtime_snapshots.values() if snapshot.get("busy"))
     started_at = getattr(app.state, "started_at", None)
@@ -34,7 +34,7 @@ def collect_server_overview(app: FastAPI) -> dict[str, Any]:
         name="local",
         spec={
             "repo_root": str(app.state.repo_root),
-            "db_path": str(store.db_path),
+            "db_path": str(database.db_path),
             "log_root": str(resolve_path(app.state.runtime_config.logging.log_dir, app.state.repo_root)),
             "started_at": started_at.isoformat() if isinstance(started_at, datetime) else None,
         },
@@ -52,11 +52,11 @@ def collect_server_overview(app: FastAPI) -> dict[str, Any]:
 
 def collect_sessions(app: FastAPI) -> dict[str, Any]:
     """Collect SessionList resources."""
-    store: AppStore = app.state.store
-    message_counts = store.count_messages_by_session()
-    turn_counts = store.count_turns_by_session()
+    database: SessionDatabase = app.state.database
+    message_counts = database.count_messages_by_session()
+    turn_counts = database.count_turns_by_session()
     items: list[dict[str, Any]] = []
-    for session in store.list_sessions():
+    for session in database.list_sessions():
         items.append(
             build_resource(
                 kind="Session",
@@ -81,8 +81,8 @@ def collect_sessions(app: FastAPI) -> dict[str, Any]:
 
 def collect_session_detail(app: FastAPI, session_id: str) -> dict[str, Any] | None:
     """Collect one Session resource detail."""
-    store: AppStore = app.state.store
-    detail = store.get_session_detail(session_id)
+    database: SessionDatabase = app.state.database
+    detail = database.get_session_detail(session_id)
     if detail is None:
         return None
     runtime_snapshot = app.state.session_registry.snapshot_runtime(session_id)
@@ -128,7 +128,7 @@ def collect_turns(
     redacted: bool = True,
 ) -> dict[str, Any]:
     """Collect TurnList resources."""
-    turns, next_cursor = app.state.store.list_turns(
+    turns, next_cursor = app.state.database.list_turns(
         session_id=session_id,
         status=status,
         cursor=cursor,
@@ -140,7 +140,7 @@ def collect_turns(
 
 def collect_turn_detail(app: FastAPI, turn_id: str, *, redacted: bool = True) -> dict[str, Any] | None:
     """Collect one Turn resource."""
-    turn = app.state.store.get_turn(turn_id)
+    turn = app.state.database.get_turn(turn_id)
     if turn is None:
         return None
     injected_entry_ids: list[str] = []
@@ -204,7 +204,7 @@ def collect_config_view(app: FastAPI) -> dict[str, Any]:
 
 def collect_memory_workspace(app: FastAPI, session_id: str) -> dict[str, Any] | None:
     """Collect one file-backed memory workspace resource."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
 
@@ -244,7 +244,7 @@ def collect_memory_workspace(app: FastAPI, session_id: str) -> dict[str, Any] | 
 
 def collect_memory_document(app: FastAPI, session_id: str) -> dict[str, Any] | None:
     """Collect one curated memory document resource."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
 
@@ -278,7 +278,7 @@ def collect_memory_document(app: FastAPI, session_id: str) -> dict[str, Any] | N
 
 def collect_memory_entries(app: FastAPI, session_id: str) -> dict[str, Any] | None:
     """Collect one list of structured curated memory entries."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
 
@@ -316,7 +316,7 @@ def collect_memory_entries(app: FastAPI, session_id: str) -> dict[str, Any] | No
 
 def collect_memory_entry(app: FastAPI, session_id: str, entry_id: str) -> dict[str, Any] | None:
     """Collect one structured curated memory entry."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
     memory_store = app.state.memory_store
@@ -357,7 +357,7 @@ def collect_memory_entry(app: FastAPI, session_id: str, entry_id: str) -> dict[s
 
 def collect_memory_settings(app: FastAPI, session_id: str) -> dict[str, Any] | None:
     """Collect one session memory settings resource."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
     memory_store = app.state.memory_store
@@ -390,7 +390,7 @@ def collect_memory_settings(app: FastAPI, session_id: str) -> dict[str, Any] | N
 
 def collect_memory_audit(app: FastAPI, session_id: str, *, limit: int = 100) -> dict[str, Any] | None:
     """Collect recent session memory audit events."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
     memory_store = app.state.memory_store
@@ -423,7 +423,7 @@ def collect_memory_audit(app: FastAPI, session_id: str, *, limit: int = 100) -> 
 
 def collect_memory_daily_logs(app: FastAPI, session_id: str) -> dict[str, Any] | None:
     """Collect the list of daily memory log files for one session."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
 
@@ -450,7 +450,7 @@ def collect_memory_daily_logs(app: FastAPI, session_id: str) -> dict[str, Any] |
 
 def collect_memory_daily_log(app: FastAPI, session_id: str, date: str) -> dict[str, Any] | None:
     """Collect one daily memory log resource."""
-    session = app.state.store.get_session_record(session_id)
+    session = app.state.database.get_session(session_id)
     if session is None:
         return None
 

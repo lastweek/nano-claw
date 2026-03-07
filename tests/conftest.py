@@ -17,7 +17,7 @@ from src.tools import ToolRegistry
 from src.tools.bash import BashTool
 from src.tools.read import ReadTool
 from src.tools.write import WriteTool
-from src.store.repository import deserialize_summary
+from src.database.session_database import deserialize_session_summary
 
 
 @pytest.fixture
@@ -164,8 +164,8 @@ class FakeAgent:
 def patch_http_runtime(monkeypatch, temp_dir):
     """Patch HTTP runtime creation with deterministic fake runtime."""
 
-    def _fake_build_session_resources(session_id, runtime_config, repo_root, store, memory_store=None):
-        session_snapshot = store.get_session_snapshot(session_id)
+    def _fake_build_session_resources(session_id, runtime_config, repo_root, database, memory_store=None):
+        session_snapshot = database.get_session_snapshot(session_id)
         if session_snapshot is None:
             raise KeyError(f"Unknown session: {session_id}")
 
@@ -174,7 +174,7 @@ def patch_http_runtime(monkeypatch, temp_dir):
             {"role": message.role, "content": message.content}
             for message in session_snapshot.messages
         ]
-        context.summary = deserialize_summary(session_snapshot.summary_json)
+        context.summary = deserialize_session_summary(session_snapshot.summary_json)
         context.active_skills = []
         context.session_mode = "build"
 

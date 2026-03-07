@@ -10,14 +10,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.config import Config, config
-from src.memory import SessionMemoryStore
+from src.memory import SessionMemory
 from src.server.admin_routes import router as admin_router
 from src.server.event_bus import TurnEventBus
 from src.server.routes import router
 from src.server.session_registry import SessionRegistry
 from src.server.session_resources import SessionResourcesFactory, build_session_resources
-from src.store.db import migrate_legacy_http_db, resolve_http_db_path
-from src.store.repository import AppStore
+from src.database.connection import migrate_legacy_http_database, resolve_http_database_path
+from src.database.session_database import SessionDatabase
 from src.utils import resolve_path
 
 
@@ -30,28 +30,28 @@ def create_app(
     """Create the local FastAPI app for one repo-root daemon instance."""
     resolved_config = runtime_config or config
     resolved_repo_root = resolve_path(repo_root or Path.cwd())
-    db_path = resolve_http_db_path(resolved_config.server.db_path, resolved_repo_root)
+    db_path = resolve_http_database_path(resolved_config.server.db_path, resolved_repo_root)
 
-    store = AppStore(db_path)
-    memory_store = SessionMemoryStore(
+    database = SessionDatabase(db_path)
+    memory_store = SessionMemory(
         repo_root=resolved_repo_root,
         runtime_config=resolved_config,
-        session_lookup=store.get_session_record,
+        session_lookup=database.get_session,
     )
     event_bus = TurnEventBus()
     resolved_resources_factory = resources_factory or (
-        lambda session_id, runtime_config, repo_root, store: build_session_resources(
+        lambda session_id, runtime_config, repo_root, database: build_session_resources(
             session_id,
             runtime_config,
             repo_root,
-            store,
+            database,
             memory_store=memory_store,
         )
     )
     session_registry = SessionRegistry(
         runtime_config=resolved_config,
         repo_root=resolved_repo_root,
-        store=store,
+        database=database,
         event_bus=event_bus,
         resources_factory=resolved_resources_factory,
     )
@@ -61,18 +61,18 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup owns persisted state recovery; shutdown owns in-memory runtime cleanup.
-        db_notice = migrate_legacy_http_db(store.db_path, resolved_repo_root)
+        db_notice = migrate_legacy_http_database(database.db_path, resolved_repo_root)
         if db_notice:
             print(db_notice)
-        store.init_db()
-        store.mark_incomplete_turns_failed()
+        database.initialize()
+        database.mark_incomplete_turns_failed()
         yield
         session_registry.close_all()
 
     app = FastAPI(title="nano-claw HTTP", lifespan=lifespan)
     app.state.runtime_config = resolved_config
     app.state.repo_root = resolved_repo_root
-    app.state.store = store
+    app.state.database = database
     app.state.memory_store = memory_store
     app.state.event_bus = event_bus
     app.state.session_registry = session_registry

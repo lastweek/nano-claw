@@ -1,7 +1,7 @@
 """Migration tests for HTTP persistence schema upgrades."""
 
-from src.store.db import initialize_db, managed_db_connection
-from src.store.repository import AppStore
+from src.database.connection import initialize_database, managed_database_connection
+from src.database.session_database import SessionDatabase
 
 
 def test_migrate_runs_schema_to_turns(temp_dir):
@@ -9,7 +9,7 @@ def test_migrate_runs_schema_to_turns(temp_dir):
     db_path = temp_dir / "state.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with managed_db_connection(db_path) as connection:
+    with managed_database_connection(db_path) as connection:
         connection.execute(
             """
             CREATE TABLE sessions (
@@ -72,13 +72,13 @@ def test_migrate_runs_schema_to_turns(temp_dir):
         connection.execute("PRAGMA user_version = 1")
         connection.commit()
 
-    initialize_db(db_path)
-    store = AppStore(db_path)
-    turn = store.get_turn("run_old")
+    initialize_database(db_path)
+    database = SessionDatabase(db_path)
+    turn = database.get_turn("run_old")
     assert turn is not None
     assert turn.status == "completed"
 
-    with managed_db_connection(db_path) as connection:
+    with managed_database_connection(db_path) as connection:
         tables = {
             row["name"]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()

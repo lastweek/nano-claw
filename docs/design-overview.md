@@ -24,7 +24,7 @@ flowchart LR
     ResourcesA[SessionResources A<br/>Agent + Context + Logger + Tools]
     ResourcesB[SessionResources B<br/>Agent + Context + Logger + Tools]
     Bus[TurnEventBus<br/>in-memory SSE fanout]
-    Store[AppStore]
+    Database[SessionDatabase]
     DB[(SQLite<br/>sessions/messages/turns)]
     Repo[(Repo Filesystem)]
     LLM[LLM Provider]
@@ -35,7 +35,7 @@ flowchart LR
 
     API --> Registry
     API --> Bus
-    API --> Store
+    API --> Database
 
     Registry --> RuntimeA
     Registry --> RuntimeB
@@ -44,10 +44,10 @@ flowchart LR
 
     RuntimeA --> Bus
     RuntimeB --> Bus
-    RuntimeA --> Store
-    RuntimeB --> Store
+    RuntimeA --> Database
+    RuntimeB --> Database
 
-    Store --> DB
+    Database --> DB
 
     ResourcesA --> Repo
     ResourcesB --> Repo
@@ -62,11 +62,11 @@ flowchart LR
 - `src/server/session_resources.py`: builds one loaded per-session resource bundle from a persisted session snapshot.
 - `src/server/session_runtime.py`: owns the long-running worker thread, turn execution, SSE emission, and transcript persistence policy.
 - `src/server/session_registry.py`: lazy process-local registry of loaded session runtimes.
-- `src/store/repository.py`: SQLite access with three distinct read shapes:
+- `src/database/session_database.py`: SQLite access with three distinct read shapes:
   - `record`: one persisted row summary
   - `detail`: expanded API-facing session view
   - `snapshot`: minimal hydration view for runtime construction
-- `src/server/admin_collectors_core.py`: admin resources sourced directly from store/app state.
+- `src/server/admin_collectors_core.py`: admin resources sourced directly from database and app state.
 - `src/server/admin_collectors_runtime.py`: admin resources derived from loaded runtime snapshots.
 - `src/server/admin_logs.py`: log file listing, tailing, download resolution, and path safety checks.
 
@@ -76,20 +76,20 @@ flowchart LR
 sequenceDiagram
     participant C as Client
     participant API as FastAPI
-    participant Store as AppStore
+    participant Database as SessionDatabase
     participant Reg as SessionRegistry
     participant RT as SessionRuntime
 
     C->>API: POST /api/v1/sessions
-    API->>Store: create_session()
-    Store-->>API: SessionRecord(state=active)
+    API->>Database: create_session()
+    Database-->>API: SessionRecord(state=active)
     API->>Reg: ensure_runtime(session_id)
     Reg->>RT: start worker thread + build SessionResources
     RT-->>Reg: ready
     API-->>C: 201 Created (session_id)
 
     C->>API: DELETE /api/v1/sessions/{id}
-    API->>Store: close_session(id)
+    API->>Database: close_session(id)
     API->>Reg: close_runtime(id)
     Reg->>RT: stop signal + join
     API-->>C: 200 OK (state=closed)
@@ -101,7 +101,7 @@ sequenceDiagram
 sequenceDiagram
     participant C as Client
     participant API as FastAPI
-    participant Store as AppStore
+    participant Database as SessionDatabase
     participant Reg as SessionRegistry
     participant RT as SessionRuntime Worker
     participant Res as SessionResources
@@ -110,7 +110,7 @@ sequenceDiagram
     C->>API: POST /sessions/{id}/turns {input}
     API->>Reg: ensure_runtime(id)
     API->>RT: submit_turn(input)
-    RT->>Store: create_turn(status=queued)
+    RT->>Database: create_turn(status=queued)
     RT->>Bus: publish status=queued
     API-->>C: 202 Accepted + stream_url
 
@@ -118,17 +118,17 @@ sequenceDiagram
     API->>Bus: subscribe(turn_id)
     API-->>C: status snapshot + live events
 
-    RT->>Store: set_turn_running()
+    RT->>Database: set_turn_running()
     RT->>Bus: publish status=running
     RT->>Res: agent.run_stream(input)
     RT->>Bus: publish chunk events
 
     alt success
-        RT->>Store: append_session_snapshot_delta(...) or replace_session_snapshot(...)
-        RT->>Store: finish_turn_success(final_output)
+        RT->>Database: append_session_snapshot_delta(...) or replace_session_snapshot(...)
+        RT->>Database: finish_turn_success(final_output)
         RT->>Bus: publish done
     else failure
-        RT->>Store: finish_turn_failure(error_text)
+        RT->>Database: finish_turn_failure(error_text)
         RT->>Bus: publish error
     end
 

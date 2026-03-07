@@ -37,14 +37,14 @@ from src.server.schemas import (
 )
 from src.server.session_registry import SessionRegistry
 from src.server.session_runtime import SessionBusyError, SessionClosedError
-from src.store.repository import AppStore, TurnRecord
+from src.database.session_database import SessionDatabase, TurnRecord
 
 
 router = APIRouter()
 
 
-def _get_store(request: Request) -> AppStore:
-    return request.app.state.store
+def _get_database(request: Request) -> SessionDatabase:
+    return request.app.state.database
 
 
 def _get_registry(request: Request) -> SessionRegistry:
@@ -91,14 +91,14 @@ def _status_snapshot_event(turn: TurnRecord) -> dict:
 
 
 def _require_turn(request: Request, turn_id: str) -> TurnRecord:
-    turn = _get_store(request).get_turn(turn_id)
+    turn = _get_database(request).get_turn(turn_id)
     if turn is None:
         raise KeyError(f"Unknown turn: {turn_id}")
     return turn
 
 
-def _require_session_record(request: Request, session_id: str):
-    session = _get_store(request).get_session_record(session_id)
+def _require_session(request: Request, session_id: str):
+    session = _get_database(request).get_session(session_id)
     if session is None:
         raise KeyError(f"Unknown session: {session_id}")
     return session
@@ -162,7 +162,7 @@ def list_sessions(request: Request) -> list[SessionSummaryResponse]:
     """List persisted sessions newest first."""
     return [
         SessionSummaryResponse(**session.__dict__)
-        for session in _get_store(request).list_sessions()
+        for session in _get_database(request).list_sessions()
     ]
 
 
@@ -173,14 +173,14 @@ def list_sessions(request: Request) -> list[SessionSummaryResponse]:
 )
 def create_session(request: Request, payload: CreateSessionRequest) -> CreateSessionResponse:
     """Create a persisted session and start its long-running runtime."""
-    store = _get_store(request)
+    database = _get_database(request)
     registry = _get_registry(request)
-    session = store.create_session(payload.title)
+    session = database.create_session(payload.title)
     try:
         registry.ensure_runtime(session.id)
     except Exception as exc:
         try:
-            store.delete_session_record(session.id)
+            database.delete_session(session.id)
         except Exception:
             pass
         try:
@@ -204,9 +204,9 @@ def create_session(request: Request, payload: CreateSessionRequest) -> CreateSes
 @router.get("/api/v1/sessions/{session_id}", response_model=SessionDetailResponse)
 def get_session_detail(request: Request, session_id: str) -> SessionDetailResponse:
     """Return persisted transcript and current runtime state for one session."""
-    store = _get_store(request)
+    database = _get_database(request)
     registry = _get_registry(request)
-    session_detail = store.get_session_detail(session_id)
+    session_detail = database.get_session_detail(session_id)
     if session_detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown session: {session_id}")
 
@@ -246,14 +246,14 @@ def get_session_detail(request: Request, session_id: str) -> SessionDetailRespon
 @router.delete("/api/v1/sessions/{session_id}", response_model=CloseSessionResponse)
 def delete_session(request: Request, session_id: str) -> CloseSessionResponse:
     """Close a session and release its runtime resources."""
-    store = _get_store(request)
+    database = _get_database(request)
     registry = _get_registry(request)
     memory_store = _get_memory_store(request)
-    session = store.get_session_record(session_id)
+    session = database.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown session: {session_id}")
 
-    closed = store.close_session(session_id)
+    closed = database.close_session(session_id)
     registry.close_runtime(session_id)
     memory_store.delete_session_memory(session_id)
     return CloseSessionResponse(
@@ -329,7 +329,7 @@ def get_session_memory_workspace(request: Request, session_id: str) -> MemoryWor
     """Return one session's memory workspace summary."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -354,7 +354,7 @@ def get_session_memory_document(request: Request, session_id: str) -> MemoryDocu
     """Return the raw curated memory document for one session."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -379,7 +379,7 @@ def put_session_memory_document(
     """Replace the raw curated memory document for one active session."""
     memory_store = _require_memory_enabled(request)
     try:
-        session = _require_session_record(request, session_id)
+        session = _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if session.state != "active":
@@ -408,7 +408,7 @@ def list_session_memory_entries(
     """List structured curated memory entries for one session."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
         entries = memory_store.list_entries(
             session_id,
             kind=kind,
@@ -440,7 +440,7 @@ def create_session_memory_entry(
     """Create or upsert one curated memory entry."""
     memory_store = _require_memory_enabled(request)
     try:
-        session = _require_session_record(request, session_id)
+        session = _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if session.state != "active":
@@ -477,7 +477,7 @@ def patch_session_memory_entry(
     """Update lifecycle or content for one curated memory entry."""
     memory_store = _require_memory_enabled(request)
     try:
-        session = _require_session_record(request, session_id)
+        session = _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if session.state != "active":
@@ -532,7 +532,7 @@ def delete_session_memory_entry(request: Request, session_id: str, entry_id: str
     """Delete one curated memory entry."""
     memory_store = _require_memory_enabled(request)
     try:
-        session = _require_session_record(request, session_id)
+        session = _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if session.state != "active":
@@ -559,7 +559,7 @@ def get_session_memory_settings(request: Request, session_id: str) -> MemorySett
     """Return one session's memory mode settings."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _serialize_memory_settings(session_id, memory_store)
@@ -577,7 +577,7 @@ def patch_session_memory_settings(
     """Update the current session memory mode."""
     memory_store = _require_memory_enabled(request)
     try:
-        session = _require_session_record(request, session_id)
+        session = _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if session.state != "active":
@@ -597,7 +597,7 @@ def get_session_memory_daily_logs(request: Request, session_id: str) -> DailyMem
     """List daily memory files for one session."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -623,7 +623,7 @@ def get_session_memory_daily_log(
     """Return one daily memory file."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -657,7 +657,7 @@ def post_session_memory_daily_log(
     """Append one entry to the selected daily memory file."""
     memory_store = _require_memory_enabled(request)
     try:
-        session = _require_session_record(request, session_id)
+        session = _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if session.state != "active":
@@ -697,7 +697,7 @@ def search_session_memory(
     """Search curated memory and optional daily logs for one session."""
     memory_store = _require_memory_enabled(request)
     try:
-        _require_session_record(request, session_id)
+        _require_session(request, session_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 

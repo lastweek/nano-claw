@@ -568,7 +568,7 @@ Be concise and helpful."""
         public_turn_id = getattr(self.context, "current_turn_id", turn_id)
         if self.memory_store is not None:
             try:
-                self.memory_store.auto_save_turn(
+                self.memory_store.writeback_from_turn(
                     self.context.session_id,
                     turn_id=public_turn_id,
                     user_message=user_message,

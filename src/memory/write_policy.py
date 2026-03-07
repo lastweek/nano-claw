@@ -1,11 +1,11 @@
-"""Policy checks for managed session memory."""
+"""Write-acceptance policy for managed session memory."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import re
 
-from src.memory.models import MemoryCandidate, MemorySettings
+from src.memory.types import MemorySettings, MemoryWriteCandidate
 
 
 _SECRET_PATTERNS = [
@@ -42,7 +42,7 @@ def contains_reasoning_trace(text: str) -> bool:
     return any(pattern.search(text) for pattern in _CHAIN_OF_THOUGHT_PATTERNS)
 
 
-def evaluate_manual_write(candidate: MemoryCandidate, settings: MemorySettings) -> MemoryPolicyDecision:
+def evaluate_manual_write(candidate: MemoryWriteCandidate, settings: MemorySettings) -> MemoryPolicyDecision:
     """Validate explicit human/tool/API writes."""
     if settings.mode == "off":
         return MemoryPolicyDecision(False, "session memory mode is off")
@@ -56,7 +56,7 @@ def evaluate_manual_write(candidate: MemoryCandidate, settings: MemorySettings) 
     return MemoryPolicyDecision(True, "accepted")
 
 
-def evaluate_autonomous_write(candidate: MemoryCandidate, settings: MemorySettings) -> MemoryPolicyDecision:
+def evaluate_autonomous_write(candidate: MemoryWriteCandidate, settings: MemorySettings) -> MemoryPolicyDecision:
     """Validate conservative autonomous writeback candidates."""
     if settings.mode != "auto":
         return MemoryPolicyDecision(False, "session memory mode does not allow autonomous writeback")

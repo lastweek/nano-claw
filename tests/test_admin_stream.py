@@ -43,7 +43,7 @@ def test_admin_stream_emits_snapshot_heartbeat_and_resource_changed(
     with TestClient(app) as client:
         def create_session_later():
             time.sleep(0.35)
-            app.state.store.create_session("trigger-change")
+            app.state.database.create_session("trigger-change")
 
         worker = threading.Thread(target=create_session_later, daemon=True)
         worker.start()
@@ -76,7 +76,7 @@ def test_admin_stream_handles_high_event_volume_with_repeated_db_reads(
         def churn_sessions():
             for index in range(12):
                 time.sleep(0.2)
-                app.state.store.create_session(f"churn-{index}")
+                app.state.database.create_session(f"churn-{index}")
 
         worker = threading.Thread(target=churn_sessions, daemon=True)
         worker.start()
@@ -109,7 +109,7 @@ def test_admin_stream_stops_when_client_disconnects(
         runtime_config=http_runtime_config,
         repo_root=temp_dir,
     )
-    app.state.store.init_db()
+    app.state.database.initialize()
 
     class FakeRequest:
         def __init__(self) -> None:
@@ -150,7 +150,7 @@ def test_admin_stream_stops_when_app_shutdown_is_requested(
         runtime_config=http_runtime_config,
         repo_root=temp_dir,
     )
-    app.state.store.init_db()
+    app.state.database.initialize()
 
     class FakeRequest:
         async def is_disconnected(self) -> bool:
