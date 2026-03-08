@@ -24,11 +24,28 @@ class TestConfigDefaults:
         """Test logging config default values."""
         monkeypatch.delenv("ENABLE_LOGGING", raising=False)
         monkeypatch.delenv("ASYNC_LOGGING", raising=False)
+        monkeypatch.delenv("NANO_CODER_TEST", raising=False)
+        monkeypatch.delenv("NANO_CLAW_TEST_ROOT", raising=False)
         config = Config()
         assert config.logging.enabled is True
         assert config.logging.async_mode is False
         assert config.logging.log_dir == "~/.nano-claw/sessions"
         assert config.logging.buffer_size == 10
+
+    def test_test_mode_redirects_default_runtime_paths(self, monkeypatch, temp_dir):
+        """Default runtime state should stay out of ~/.nano-claw during tests."""
+        test_root = (temp_dir / "runtime").resolve()
+        monkeypatch.setenv("NANO_CODER_TEST", "true")
+        monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+        monkeypatch.delenv("LOG_DIR", raising=False)
+        monkeypatch.delenv("MEMORY_ROOT_DIR", raising=False)
+        monkeypatch.delenv("SERVER_DB_PATH", raising=False)
+
+        config = Config()
+
+        assert config.logging.log_dir == str(test_root / "sessions")
+        assert config.memory.root_dir == str(test_root / "sessions")
+        assert config.server.db_path == str(test_root / "state.db")
 
     def test_agent_defaults(self, monkeypatch):
         """Test agent config default values."""

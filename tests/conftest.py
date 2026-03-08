@@ -8,6 +8,12 @@ from pathlib import Path
 
 import pytest
 
+os.environ["NANO_CODER_TEST"] = "true"
+_EXISTING_TEST_ROOT = os.environ.get("NANO_CLAW_TEST_ROOT")
+_CREATED_TEST_ROOT = _EXISTING_TEST_ROOT is None
+_TEST_RUNTIME_ROOT = Path(_EXISTING_TEST_ROOT or tempfile.mkdtemp(prefix="nano-claw-test-root-")).resolve()
+os.environ["NANO_CLAW_TEST_ROOT"] = str(_TEST_RUNTIME_ROOT)
+
 from src.config import Config
 from src.context import CompactedContextSummary, Context
 from src.logger_types import SessionLogSnapshot
@@ -18,6 +24,12 @@ from src.tools.bash import BashTool
 from src.tools.read import ReadTool
 from src.tools.write import WriteTool
 from src.database.session_database import deserialize_session_summary
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Remove the pytest-owned runtime root after the test session."""
+    if _CREATED_TEST_ROOT:
+        shutil.rmtree(_TEST_RUNTIME_ROOT, ignore_errors=True)
 
 
 @pytest.fixture

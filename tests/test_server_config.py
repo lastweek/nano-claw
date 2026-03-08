@@ -6,6 +6,8 @@ from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 
 def test_server_defaults(monkeypatch):
     """Server config should expose the documented local defaults."""
+    monkeypatch.delenv("NANO_CODER_TEST", raising=False)
+    monkeypatch.delenv("NANO_CLAW_TEST_ROOT", raising=False)
     monkeypatch.delenv("SERVER_HOST", raising=False)
     monkeypatch.delenv("SERVER_PORT", raising=False)
     monkeypatch.delenv("SERVER_DB_PATH", raising=False)

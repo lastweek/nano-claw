@@ -6,6 +6,7 @@ from rich.console import Console
 from src.agent import Agent
 from src.agent_turn_prep import build_conversation_messages, prepare_turn_input
 from src.commands import CommandRegistry, builtin
+from src.config import Config
 from src.context import Context
 from src.memory import MemoryWriteCandidate, SessionMemory
 from src.tools import ToolRegistry
@@ -43,6 +44,21 @@ def test_memory_store_resolves_into_unified_session_directory(temp_dir, http_run
     assert path.parent.parent == (temp_dir / "sessions").resolve()
     assert store.settings_path("sess_move").name == "memory-settings.json"
     assert store.audit_path("sess_move").name == "memory-audit.jsonl"
+
+
+def test_default_session_memory_uses_test_runtime_root(temp_dir, monkeypatch):
+    """Default SessionMemory should resolve under the pytest runtime root."""
+    test_root = (temp_dir / "runtime").resolve()
+    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+    monkeypatch.delenv("MEMORY_ROOT_DIR", raising=False)
+    runtime_config = Config()
+
+    store = SessionMemory(repo_root=temp_dir, runtime_config=runtime_config)
+    session_root = store.session_root("sess_default")
+
+    assert session_root.is_relative_to(test_root / "sessions")
+    assert not session_root.is_relative_to((temp_dir / ".nano-claw").resolve())
 
 
 def test_memory_store_parses_empty_default_document(temp_dir, http_runtime_config):

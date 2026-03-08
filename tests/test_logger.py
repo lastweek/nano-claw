@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from src.config import Config
 from src.logger import SessionLogger
 
 
@@ -28,6 +29,30 @@ def _top_level_session_dir(root: Path) -> Path:
 
 class TestSessionLogger:
     """Test SessionLogger functionality."""
+
+    def test_default_logger_uses_test_runtime_root(self, temp_dir, monkeypatch):
+        """Default SessionLogger should resolve under the pytest runtime root."""
+        test_root = (temp_dir / "runtime").resolve()
+        monkeypatch.setenv("NANO_CODER_TEST", "true")
+        monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+        monkeypatch.delenv("LOG_DIR", raising=False)
+        runtime_config = Config()
+
+        logger = SessionLogger(str(uuid.uuid4()), runtime_config=runtime_config, enabled=True)
+        logger.start_session(
+            cwd=str(temp_dir),
+            provider="openai",
+            model="gpt-4.1",
+            base_url="https://example.invalid/v1",
+            streaming_enabled=True,
+        )
+        turn_id = logger.start_turn(raw_user_input="hello", normalized_user_input="hello")
+        logger.finish_turn(turn_id, "world", [], status="completed")
+        logger.close()
+
+        session_dir = logger.ensure_session_dir()
+        assert session_dir.is_relative_to(test_root / "sessions")
+        assert not session_dir.is_relative_to((Path.home() / ".nano-claw").resolve())
 
     def _build_logger(self, temp_dir, **kwargs):
         logger = SessionLogger(str(uuid.uuid4()), log_dir=str(temp_dir), enabled=True, **kwargs)

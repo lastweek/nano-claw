@@ -1,12 +1,18 @@
 """Centralized configuration for nano-claw."""
 
-from typing import Optional, List, Literal, get_args
+import os
 from pathlib import Path
+from typing import Optional, List, Literal, get_args
 import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 from src.utils import env_truthy
+
+
+DEFAULT_SESSIONS_ROOT = "~/.nano-claw/sessions"
+TEST_MODE_ENV = "NANO_CODER_TEST"
+TEST_RUNTIME_ROOT_ENV = "NANO_CLAW_TEST_ROOT"
 
 
 class LLMConfig(BaseSettings):
@@ -46,7 +52,7 @@ class LoggingConfig(BaseSettings):
 
     enabled: bool = Field(default=True, alias="ENABLE_LOGGING")
     async_mode: bool = Field(default=False, alias="ASYNC_LOGGING")
-    log_dir: str = Field(default="~/.nano-claw/sessions", alias="LOG_DIR")
+    log_dir: str = Field(default=DEFAULT_SESSIONS_ROOT, alias="LOG_DIR")
     buffer_size: int = Field(default=10, ge=1, le=100)
 
 
@@ -172,7 +178,7 @@ class MemoryConfig(BaseSettings):
     )
 
     enabled: bool = Field(default=True)
-    root_dir: str = Field(default="~/.nano-claw/sessions")
+    root_dir: str = Field(default=DEFAULT_SESSIONS_ROOT)
     debug: bool = Field(default=False)
     auto_load_memory: bool = Field(default=True)
     max_auto_chars: int = Field(default=4000, ge=1)
@@ -299,6 +305,7 @@ class Config:
         self.macos_tools = self._create_config(MacOSToolsConfig, config_dict.get("macos_tools", {}))
         self.server = self._create_config(ServerConfig, config_dict.get("server", {}))
         self.mcp = self._create_mcp_config(config_dict.get("mcp", {}))
+        self._apply_test_runtime_defaults(config_dict)
 
         if self.context.target_usage_after_compaction >= self.context.auto_compact_threshold:
             raise ValueError(
@@ -317,9 +324,6 @@ class Config:
         Returns:
             Config instance with env vars taking precedence over yaml values
         """
-        # Import os to check if env var is set
-        import os
-
         # Check each field to see if an env var is set
         # Only apply yaml value if no env var is set
         filtered_values = {}
@@ -357,6 +361,51 @@ class Config:
         # Create instance with filtered yaml values
         # Pydantic-settings will still apply env vars for any fields not in filtered_values
         return config_class(**filtered_values)
+
+    @staticmethod
+    def _resolve_test_runtime_root() -> Path | None:
+        """Return the redirected runtime root when test mode requests one."""
+        if not env_truthy(TEST_MODE_ENV):
+            return None
+        raw_root = os.environ.get(TEST_RUNTIME_ROOT_ENV)
+        if not raw_root:
+            return None
+        return Path(raw_root).expanduser().resolve()
+
+    @staticmethod
+    def _field_env_names(config_class, field_name: str) -> set[str]:
+        """Return the environment variables that can drive one config field."""
+        field = config_class.model_fields[field_name]
+        env_names: set[str] = set()
+        alias = getattr(field, "alias", None)
+        if alias:
+            env_names.add(str(alias))
+        env_prefix = config_class.model_config.get("env_prefix", "")
+        env_names.add(f"{env_prefix}{field_name}".upper())
+        return env_names
+
+    @classmethod
+    def _has_explicit_setting(cls, config_class, field_name: str, yaml_values: dict) -> bool:
+        """Return whether a field was set explicitly by yaml or environment."""
+        if field_name in yaml_values:
+            return True
+        return any(env_name in os.environ for env_name in cls._field_env_names(config_class, field_name))
+
+    def _apply_test_runtime_defaults(self, config_dict: dict) -> None:
+        """Redirect default state paths into a pytest-owned temp root when requested."""
+        test_root = self._resolve_test_runtime_root()
+        if test_root is None:
+            return
+
+        sessions_root = str((test_root / "sessions").resolve())
+        database_path = str((test_root / "state.db").resolve())
+
+        if not self._has_explicit_setting(LoggingConfig, "log_dir", config_dict.get("logging", {})):
+            self.logging.log_dir = sessions_root
+        if not self._has_explicit_setting(MemoryConfig, "root_dir", config_dict.get("memory", {})):
+            self.memory.root_dir = sessions_root
+        if not self._has_explicit_setting(ServerConfig, "db_path", config_dict.get("server", {})):
+            self.server.db_path = database_path
 
     @staticmethod
     def _create_mcp_config(yaml_values: dict) -> MCPConfig:
