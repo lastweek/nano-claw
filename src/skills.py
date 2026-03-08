@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Literal, Optional
 import yaml
 
 
-SkillSource = Literal["repo", "user"]
+SkillSource = Literal["repo", "user", "extension"]
 
 MAX_SKILL_BODY_LINES = 500
 
@@ -45,6 +45,9 @@ class SkillSpec:
     eligibility_reason: Optional[str] = None
     required_os: List[str] = field(default_factory=list)
     required_config: List[str] = field(default_factory=list)
+    extension_name: Optional[str] = None
+    extension_version: Optional[str] = None
+    extension_install_scope: Optional[str] = None
 
     @property
     def body_line_count(self) -> int:
@@ -57,6 +60,17 @@ class SkillSpec:
         return self.body_line_count > MAX_SKILL_BODY_LINES
 
 
+@dataclass(frozen=True)
+class SkillDiscoveryRoot:
+    """One concrete filesystem root to scan for skills."""
+
+    source: SkillSource
+    root: Path
+    extension_name: Optional[str] = None
+    extension_version: Optional[str] = None
+    extension_install_scope: Optional[str] = None
+
+
 class SkillManager:
     """Discover, inspect, and format Codex-style skill bundles."""
 
@@ -66,12 +80,14 @@ class SkillManager:
         user_root: Optional[Path] = None,
         runtime_config: Any | None = None,
         platform_name: str | None = None,
+        extra_roots: Optional[List[SkillDiscoveryRoot]] = None,
     ) -> None:
         self.repo_root = (repo_root or Path.cwd()).resolve()
         self.user_root = (user_root or Path.home() / ".nano-claw" / "skills").expanduser().resolve()
         self.repo_skills_root = self.repo_root / ".nano-claw" / "skills"
         self.runtime_config = runtime_config
         self.platform_name = (platform_name or sys.platform).lower()
+        self.extra_roots = list(extra_roots or [])
         self._skills: Dict[str, SkillSpec] = {}
         self._warnings: List[str] = []
 
@@ -80,17 +96,19 @@ class SkillManager:
         skills: Dict[str, SkillSpec] = {}
         warnings: List[str] = []
 
-        discovery_roots: List[tuple[SkillSource, Path]] = [
-            ("user", self.user_root),
-            ("repo", self.repo_skills_root),
+        discovery_roots: List[SkillDiscoveryRoot] = [
+            SkillDiscoveryRoot(source="user", root=self.user_root),
+            *self.extra_roots,
+            SkillDiscoveryRoot(source="repo", root=self.repo_skills_root),
         ]
 
-        for source, root in discovery_roots:
+        for discovery_root in discovery_roots:
+            root = discovery_root.root
             if not root.exists():
                 continue
 
             for skill_file in sorted(root.rglob("SKILL.md")):
-                spec, skill_warnings = self._load_skill_file(skill_file, source)
+                spec, skill_warnings = self._load_skill_file(skill_file, discovery_root)
                 warnings.extend(skill_warnings)
                 if spec is None:
                     continue
@@ -188,7 +206,7 @@ class SkillManager:
     def _load_skill_file(
         self,
         skill_file: Path,
-        source: SkillSource,
+        discovery_root: SkillDiscoveryRoot,
     ) -> tuple[Optional[SkillSpec], List[str]]:
         warnings: List[str] = []
 
@@ -235,7 +253,7 @@ class SkillManager:
             body=body.strip(),
             root_dir=root_dir,
             skill_file=skill_file.resolve(),
-            source=source,
+            source=discovery_root.source,
             catalog_visible=eligible,
             scripts=self._inventory_resources(root_dir / "scripts"),
             references=self._inventory_resources(root_dir / "references"),
@@ -244,6 +262,9 @@ class SkillManager:
             eligibility_reason=eligibility_reason,
             required_os=required_os,
             required_config=required_config,
+            extension_name=discovery_root.extension_name,
+            extension_version=discovery_root.extension_version,
+            extension_install_scope=discovery_root.extension_install_scope,
         )
 
         if skill.is_oversized:
@@ -335,6 +356,9 @@ class SkillManager:
             f"Skill: {skill.name}",
             f"Description: {skill.description}",
             f"Source: {skill.skill_file}",
+            f"Catalog Source: {skill.source}",
+            f"Extension: {skill.extension_name or 'n/a'}",
+            f"Extension Version: {skill.extension_version or 'n/a'}",
             f"Eligible: {'yes' if skill.eligible else 'no'}",
             f"Eligibility Reason: {skill.eligibility_reason or 'n/a'}",
             "",

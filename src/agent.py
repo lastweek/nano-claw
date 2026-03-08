@@ -293,6 +293,16 @@ Be concise and helpful."""
             self._cached_system_prompt_base += (
                 "\n\nWhen a task can be split into independent repo subtasks, you may delegate it with run_subagent."
             )
+        if self.tools.get("find_capabilities") is not None and self.tools.get("request_capability") is not None:
+            self._cached_system_prompt_base += (
+                "\n\nMissing capability guidance:"
+                "\n- Do not invent tool names."
+                "\n- If the task appears to need a missing capability, inspect it with find_capabilities first."
+                "\n- If an eligible skill already exists, load it with load_skill."
+                "\n- If a capability exists on disk but is inactive, ask the user to run /runtime reload and record the need with request_capability."
+                "\n- If a configured catalog has an installable extension, ask for the exact /extension install <catalog>:<package> step, then /runtime reload, and record it with request_capability."
+                "\n- Otherwise create a generic request_capability entry and explain plainly what capability is needed."
+            )
 
     def _emit_llm_call_started(
         self,

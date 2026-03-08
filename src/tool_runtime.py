@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional
 
 from src.activity_preview import build_tool_result_preview
+from src.capabilities import build_capability_hint
 from src.message_types import ChatMessage, ToolCallPayload, ToolResultPayload
 
 
@@ -66,19 +67,40 @@ class AgentToolRuntime:
         try:
             tool = self.get_tool(tool_name)
             if not tool:
-                result = {"error": f"Unknown tool: {tool_name}"}
+                result = {
+                    "error": f"Unknown tool: {tool_name}",
+                    "capability_hint": build_capability_hint(
+                        query=tool_name,
+                        message=f"Tool '{tool_name}' is not available in this session.",
+                        kind="tool",
+                        name=tool_name,
+                    ),
+                }
             else:
                 result_obj = tool.execute(self.context, **parsed_args)
                 if result_obj.success:
-                    result = {"output": str(result_obj.data)}
+                    result = {"output": self._normalize_tool_output(result_obj.data)}
                 else:
                     result = {"error": result_obj.error or "Tool execution failed"}
+                if result_obj.meta:
+                    result.update(result_obj.meta)
         except json.JSONDecodeError:
             result = {"error": f"Invalid JSON in tool arguments: {tool_call['arguments']}"}
         except Exception as exc:
             result = {"error": f"Error executing tool: {exc}"}
 
         return self.build_tool_result_message(tool_id, result), result
+
+    @staticmethod
+    def _normalize_tool_output(value: Any) -> Any:
+        """Preserve structured tool data when it is JSON-safe."""
+        if value is None:
+            return ""
+        try:
+            json.dumps(value)
+            return value
+        except TypeError:
+            return str(value)
 
     def execute_submit_plan_tool(
         self,

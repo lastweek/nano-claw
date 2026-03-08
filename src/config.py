@@ -221,6 +221,62 @@ class MacOSToolsConfig(BaseSettings):
     enable_messages: bool = Field(default=True)
 
 
+class WebToolsConfig(BaseSettings):
+    """Public web-reading tool configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="WEB_TOOLS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    enabled: bool = Field(default=True)
+    timeout_seconds: int = Field(default=15, ge=1)
+    max_response_bytes: int = Field(default=2_000_000, ge=1)
+    max_content_chars: int = Field(default=20_000, ge=1)
+    allow_private_networks: bool = Field(default=False)
+    enable_fetch_url: bool = Field(default=True)
+    enable_read_webpage: bool = Field(default=True)
+    enable_extract_page_links: bool = Field(default=True)
+
+
+class ExtensionCatalogConfig(BaseSettings):
+    """Configuration for one curated extension catalog."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="EXTENSIONS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    name: str = Field(description="Unique catalog name")
+    url: str = Field(description="Catalog URL")
+    enabled: bool = Field(default=True)
+
+
+class ExtensionsConfig(BaseSettings):
+    """Runtime-loadable extension bundle configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="EXTENSIONS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    enabled: bool = Field(default=True)
+    user_root: str = Field(default="~/.nano-claw/extensions")
+    repo_root: str = Field(default=".nano-claw/extensions")
+    runner_timeout_seconds: int = Field(default=60, ge=1)
+    install_timeout_seconds: int = Field(default=30, ge=1)
+    catalogs: List[ExtensionCatalogConfig] = Field(default_factory=list)
+
+
 class ServerConfig(BaseSettings):
     """Local HTTP server configuration."""
 
@@ -303,6 +359,8 @@ class Config:
         self.plan = self._create_config(PlanConfig, config_dict.get("plan", {}))
         self.memory = self._create_config(MemoryConfig, config_dict.get("memory", {}))
         self.macos_tools = self._create_config(MacOSToolsConfig, config_dict.get("macos_tools", {}))
+        self.web_tools = self._create_config(WebToolsConfig, config_dict.get("web_tools", {}))
+        self.extensions = self._create_config(ExtensionsConfig, config_dict.get("extensions", {}))
         self.server = self._create_config(ServerConfig, config_dict.get("server", {}))
         self.mcp = self._create_mcp_config(config_dict.get("mcp", {}))
         self._apply_test_runtime_defaults(config_dict)
@@ -404,6 +462,8 @@ class Config:
             self.logging.log_dir = sessions_root
         if not self._has_explicit_setting(MemoryConfig, "root_dir", config_dict.get("memory", {})):
             self.memory.root_dir = sessions_root
+        if not self._has_explicit_setting(ExtensionsConfig, "user_root", config_dict.get("extensions", {})):
+            self.extensions.user_root = str((test_root / "extensions").resolve())
         if not self._has_explicit_setting(ServerConfig, "db_path", config_dict.get("server", {})):
             self.server.db_path = database_path
 

@@ -212,6 +212,51 @@ def collect_log_sessions(app: FastAPI, session_id: str | None) -> dict[str, Any]
     return build_list_resource(kind="LogSession", items=items)
 
 
+def collect_extensions(app: FastAPI) -> dict[str, Any]:
+    """Collect discovered process-level extension bundles."""
+    extension_manager = getattr(app.state, "extension_manager", None)
+    if extension_manager is None:
+        return build_list_resource(
+            kind="ExtensionBundle",
+            items=[],
+            metadata_extra={"warnings": []},
+        )
+
+    items = [
+        build_resource(
+            kind="ExtensionBundle",
+            name=extension.name,
+            spec={
+                "version": extension.version,
+                "description": extension.description,
+                "install_scope": extension.install_scope,
+                "root_dir": str(extension.root_dir),
+                "manifest_file": str(extension.manifest_file),
+                "command": list(extension.command),
+                "skill_root": str(extension.skill_root) if extension.skill_root is not None else None,
+            },
+            status={
+                "phase": "Available",
+                "tool_count": len(extension.tool_specs),
+                "tools": [
+                    {
+                        "name": tool_spec.name,
+                        "description": tool_spec.description,
+                        "parameters_schema": tool_spec.parameters,
+                    }
+                    for tool_spec in extension.tool_specs
+                ],
+            },
+        )
+        for extension in extension_manager.list_extensions()
+    ]
+    return build_list_resource(
+        kind="ExtensionBundle",
+        items=items,
+        metadata_extra={"warnings": extension_manager.get_warnings()},
+    )
+
+
 def _iter_runtime_snapshots(app: FastAPI, session_id: str | None):
     snapshots = app.state.session_registry.snapshot_all_runtimes()
     if session_id:
@@ -223,6 +268,7 @@ def _iter_runtime_snapshots(app: FastAPI, session_id: str | None):
 
 
 def _build_runtime_resource(session_id: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    capability_requests = snapshot.get("capability_requests", {})
     return build_resource(
         kind="SessionRuntime",
         name=session_id,
@@ -232,12 +278,14 @@ def _build_runtime_resource(session_id: str, snapshot: dict[str, Any]) -> dict[s
             "queue_limit": 1,
             "queue_depth": snapshot["queue_depth"],
             "pending_turn_count": snapshot["pending_turn_count"],
+            "capability_requests": capability_requests.get("requests", []),
         },
         status={
             "phase": snapshot["phase"],
             "busy": snapshot["busy"],
             "closed": snapshot["closed"],
             "active_turn_id": snapshot["active_turn_id"],
+            "pending_capability_request_count": capability_requests.get("pending_count", 0),
         },
     )
 
@@ -246,6 +294,12 @@ def _build_not_loaded_runtime_resource(session_id: str) -> dict[str, Any]:
     return build_resource(
         kind="SessionRuntime",
         name=session_id,
-        spec={"queue_limit": 1, "queue_depth": 0, "pending_turn_count": 0},
-        status={"phase": "NotLoaded", "busy": False, "closed": False, "active_turn_id": None},
+        spec={"queue_limit": 1, "queue_depth": 0, "pending_turn_count": 0, "capability_requests": []},
+        status={
+            "phase": "NotLoaded",
+            "busy": False,
+            "closed": False,
+            "active_turn_id": None,
+            "pending_capability_request_count": 0,
+        },
     )

@@ -70,6 +70,7 @@ class ToolResult:
     success: bool
     data: Optional[Any] = None
     error: Optional[str] = None
+    meta: Optional[dict[str, Any]] = None
 
 
 class Tool:
@@ -143,6 +144,12 @@ class _ToolBuildPlan:
     register_notes: bool = False
     register_reminders: bool = False
     register_messages: bool = False
+    register_fetch_url: bool = False
+    register_read_webpage: bool = False
+    register_extract_page_links: bool = False
+    register_find_capabilities: bool = False
+    register_request_capability: bool = False
+    register_extension_tools: list[str] = field(default_factory=list)
     group_decisions: list[ToolRegistrationDecision] = field(default_factory=list)
     tool_decisions: list[ToolRegistrationDecision] = field(default_factory=list)
 
@@ -164,6 +171,9 @@ def _profile_reason(tool_profile: ToolProfile, *required_profiles: str) -> str:
 
 def _build_optional_tool_plan(
     *,
+    capability_inventory,
+    capability_request_manager,
+    extension_manager,
     mcp_manager,
     subagent_manager,
     memory_store,
@@ -247,6 +257,69 @@ def _build_optional_tool_plan(
                 _skipped("messages_action", "macos_tools.enable_messages is false")
             )
 
+    web_flags = {
+        "fetch_url": runtime_config.web_tools.enable_fetch_url,
+        "read_webpage": runtime_config.web_tools.enable_read_webpage,
+        "extract_page_links": runtime_config.web_tools.enable_extract_page_links,
+    }
+    if tool_profile not in (ToolProfile.BUILD, ToolProfile.BUILD_SUBAGENT, ToolProfile.PLAN_MAIN):
+        reason = _profile_reason(tool_profile, "build", "build_subagent", "plan_main")
+        plan.group_decisions.append(_skipped("web_tools", reason))
+        for tool_name in web_flags:
+            plan.tool_decisions.append(_skipped(tool_name, reason))
+    elif not runtime_config.web_tools.enabled:
+        reason = "web_tools.enabled is false"
+        plan.group_decisions.append(_skipped("web_tools", reason))
+        for tool_name in web_flags:
+            plan.tool_decisions.append(_skipped(tool_name, reason))
+    else:
+        if any(web_flags.values()):
+            plan.group_decisions.append(_registered("web_tools"))
+        else:
+            plan.group_decisions.append(_skipped("web_tools", "no web tools enabled"))
+
+        if web_flags["fetch_url"]:
+            plan.register_fetch_url = True
+            plan.tool_decisions.append(_registered("fetch_url"))
+        else:
+            plan.tool_decisions.append(_skipped("fetch_url", "web_tools.enable_fetch_url is false"))
+
+        if web_flags["read_webpage"]:
+            plan.register_read_webpage = True
+            plan.tool_decisions.append(_registered("read_webpage"))
+        else:
+            plan.tool_decisions.append(_skipped("read_webpage", "web_tools.enable_read_webpage is false"))
+
+        if web_flags["extract_page_links"]:
+            plan.register_extract_page_links = True
+            plan.tool_decisions.append(_registered("extract_page_links"))
+        else:
+            plan.tool_decisions.append(
+                _skipped("extract_page_links", "web_tools.enable_extract_page_links is false")
+            )
+
+    if tool_profile not in (ToolProfile.BUILD, ToolProfile.PLAN_MAIN):
+        reason = _profile_reason(tool_profile, "build", "plan_main")
+        plan.group_decisions.append(_skipped("capability_tools", reason))
+        plan.tool_decisions.append(_skipped("find_capabilities", reason))
+        plan.tool_decisions.append(_skipped("request_capability", reason))
+    elif capability_inventory is None:
+        reason = "capability inventory unavailable"
+        plan.group_decisions.append(_skipped("capability_tools", reason))
+        plan.tool_decisions.append(_skipped("find_capabilities", reason))
+        plan.tool_decisions.append(_skipped("request_capability", reason))
+    elif capability_request_manager is None:
+        reason = "capability request manager unavailable"
+        plan.group_decisions.append(_skipped("capability_tools", reason))
+        plan.tool_decisions.append(_skipped("find_capabilities", reason))
+        plan.tool_decisions.append(_skipped("request_capability", reason))
+    else:
+        plan.register_find_capabilities = True
+        plan.register_request_capability = True
+        plan.group_decisions.append(_registered("capability_tools"))
+        plan.tool_decisions.append(_registered("find_capabilities"))
+        plan.tool_decisions.append(_registered("request_capability"))
+
     enabled_mcp_servers = [server for server in runtime_config.mcp.servers if server.enabled]
     if tool_profile not in (ToolProfile.BUILD, ToolProfile.BUILD_SUBAGENT):
         plan.group_decisions.append(
@@ -259,6 +332,26 @@ def _build_optional_tool_plan(
     else:
         plan.register_mcp = True
         plan.group_decisions.append(_registered("mcp"))
+
+    if tool_profile not in (ToolProfile.BUILD, ToolProfile.BUILD_SUBAGENT, ToolProfile.PLAN_MAIN):
+        reason = _profile_reason(tool_profile, "build", "build_subagent", "plan_main")
+        plan.group_decisions.append(_skipped("extensions", reason))
+    elif not runtime_config.extensions.enabled:
+        plan.group_decisions.append(_skipped("extensions", "extensions.enabled is false"))
+    elif extension_manager is None:
+        plan.group_decisions.append(_skipped("extensions", "extension manager unavailable"))
+    else:
+        extension_tool_names = [
+            tool_spec.name
+            for _extension, tool_spec in extension_manager.get_tool_specs()
+        ]
+        if extension_tool_names:
+            plan.group_decisions.append(_registered("extensions"))
+            for tool_name in extension_tool_names:
+                plan.register_extension_tools.append(tool_name)
+                plan.tool_decisions.append(_registered(tool_name))
+        else:
+            plan.group_decisions.append(_skipped("extensions", "no extension tools discovered"))
 
     if tool_profile not in (ToolProfile.BUILD, ToolProfile.PLAN_MAIN):
         plan.group_decisions.append(
@@ -282,6 +375,9 @@ def _build_optional_tool_plan(
 def build_tool_registry(
     *,
     skill_manager,
+    capability_inventory=None,
+    capability_request_manager=None,
+    extension_manager=None,
     mcp_manager=None,
     subagent_manager=None,
     memory_store=None,
@@ -292,6 +388,9 @@ def build_tool_registry(
     """Build the standard tool registry for a parent or child agent."""
     registry, _report = build_tool_registry_with_report(
         skill_manager=skill_manager,
+        capability_inventory=capability_inventory,
+        capability_request_manager=capability_request_manager,
+        extension_manager=extension_manager,
         mcp_manager=mcp_manager,
         subagent_manager=subagent_manager,
         memory_store=memory_store,
@@ -305,6 +404,9 @@ def build_tool_registry(
 def build_tool_registry_with_report(
     *,
     skill_manager,
+    capability_inventory=None,
+    capability_request_manager=None,
+    extension_manager=None,
     mcp_manager=None,
     subagent_manager=None,
     memory_store=None,
@@ -315,6 +417,8 @@ def build_tool_registry_with_report(
     """Build the standard tool registry plus a structured optional-tool debug report."""
     from src.config import config
     from src.tools.bash import BashTool
+    from src.tools.capability import FindCapabilitiesTool, RequestCapabilityTool
+    from src.tools.extension import ExtensionTool
     from src.tools.plan_submit import SubmitPlanTool
     from src.tools.plan_write import WritePlanTool
     from src.tools.read import ReadTool
@@ -330,6 +434,7 @@ def build_tool_registry_with_report(
         RemindersActionTool,
     )
     from src.tools.subagent import RunSubagentTool
+    from src.tools.web import ExtractPageLinksTool, FetchURLTool, ReadWebpageTool, WebClient
     from src.tools.write import WriteTool
 
     runtime_config = runtime_config or config
@@ -337,6 +442,9 @@ def build_tool_registry_with_report(
     registry.register(ReadTool())
     registry.register(LoadSkillTool(skill_manager))
     plan = _build_optional_tool_plan(
+        capability_inventory=capability_inventory,
+        capability_request_manager=capability_request_manager,
+        extension_manager=extension_manager,
         mcp_manager=mcp_manager,
         subagent_manager=subagent_manager,
         memory_store=memory_store,
@@ -348,6 +456,10 @@ def build_tool_registry_with_report(
     if tool_profile == ToolProfile.BUILD:
         registry.register(WriteTool())
         registry.register(BashTool())
+        if plan.register_find_capabilities:
+            registry.register(FindCapabilitiesTool(capability_inventory))
+        if plan.register_request_capability:
+            registry.register(RequestCapabilityTool(capability_request_manager))
         if plan.register_memory:
             registry.register(MemoryReadTool(memory_store))
             registry.register(MemorySearchTool(memory_store))
@@ -370,23 +482,118 @@ def build_tool_registry_with_report(
                 registry.register(RemindersActionTool(helper))
             if plan.register_messages:
                 registry.register(MessagesActionTool(helper))
+        if (
+            plan.register_fetch_url
+            or plan.register_read_webpage
+            or plan.register_extract_page_links
+        ):
+            web_client = WebClient(
+                timeout_seconds=runtime_config.web_tools.timeout_seconds,
+                max_response_bytes=runtime_config.web_tools.max_response_bytes,
+                max_content_chars=runtime_config.web_tools.max_content_chars,
+                allow_private_networks=runtime_config.web_tools.allow_private_networks,
+            )
+            if plan.register_fetch_url:
+                registry.register(FetchURLTool(web_client))
+            if plan.register_read_webpage:
+                registry.register(ReadWebpageTool(web_client))
+            if plan.register_extract_page_links:
+                registry.register(ExtractPageLinksTool(web_client))
         if plan.register_mcp:
             mcp_manager.register_tools(registry)
+        if plan.register_extension_tools:
+            for extension, tool_spec in extension_manager.get_tool_specs():
+                if tool_spec.name not in plan.register_extension_tools:
+                    continue
+                registry.register(
+                    ExtensionTool(
+                        extension,
+                        tool_spec,
+                        timeout_seconds=runtime_config.extensions.runner_timeout_seconds,
+                    )
+                )
         if plan.register_subagent:
             registry.register(RunSubagentTool(subagent_manager))
     elif tool_profile == ToolProfile.BUILD_SUBAGENT:
         registry.register(WriteTool())
         registry.register(BashTool())
+        if (
+            plan.register_fetch_url
+            or plan.register_read_webpage
+            or plan.register_extract_page_links
+        ):
+            web_client = WebClient(
+                timeout_seconds=runtime_config.web_tools.timeout_seconds,
+                max_response_bytes=runtime_config.web_tools.max_response_bytes,
+                max_content_chars=runtime_config.web_tools.max_content_chars,
+                allow_private_networks=runtime_config.web_tools.allow_private_networks,
+            )
+            if plan.register_fetch_url:
+                registry.register(FetchURLTool(web_client))
+            if plan.register_read_webpage:
+                registry.register(ReadWebpageTool(web_client))
+            if plan.register_extract_page_links:
+                registry.register(ExtractPageLinksTool(web_client))
         if plan.register_mcp:
             mcp_manager.register_tools(registry)
+        if plan.register_extension_tools:
+            for extension, tool_spec in extension_manager.get_tool_specs():
+                if tool_spec.name not in plan.register_extension_tools:
+                    continue
+                registry.register(
+                    ExtensionTool(
+                        extension,
+                        tool_spec,
+                        timeout_seconds=runtime_config.extensions.runner_timeout_seconds,
+                    )
+                )
     else:
         registry.register(ReadOnlyShellTool())
 
     if tool_profile == ToolProfile.PLAN_MAIN:
+        if plan.register_find_capabilities:
+            registry.register(FindCapabilitiesTool(capability_inventory))
+        if plan.register_request_capability:
+            registry.register(RequestCapabilityTool(capability_request_manager))
+        if (
+            plan.register_fetch_url
+            or plan.register_read_webpage
+            or plan.register_extract_page_links
+        ):
+            web_client = WebClient(
+                timeout_seconds=runtime_config.web_tools.timeout_seconds,
+                max_response_bytes=runtime_config.web_tools.max_response_bytes,
+                max_content_chars=runtime_config.web_tools.max_content_chars,
+                allow_private_networks=runtime_config.web_tools.allow_private_networks,
+            )
+            if plan.register_fetch_url:
+                registry.register(FetchURLTool(web_client))
+            if plan.register_read_webpage:
+                registry.register(ReadWebpageTool(web_client))
+            if plan.register_extract_page_links:
+                registry.register(ExtractPageLinksTool(web_client))
         registry.register(WritePlanTool())
         registry.register(SubmitPlanTool())
+        if plan.register_extension_tools:
+            for extension, tool_spec in extension_manager.get_tool_specs():
+                if tool_spec.name not in plan.register_extension_tools:
+                    continue
+                registry.register(
+                    ExtensionTool(
+                        extension,
+                        tool_spec,
+                        timeout_seconds=runtime_config.extensions.runner_timeout_seconds,
+                    )
+                )
         if plan.register_subagent:
-            registry.register(RunSubagentTool(subagent_manager))
+                registry.register(RunSubagentTool(subagent_manager))
+
+    if capability_inventory is not None:
+        capability_inventory.bind_runtime(
+            tool_registry=registry,
+            skill_manager=skill_manager,
+            extension_manager=extension_manager,
+        )
 
     report = ToolRegistryReport(
         tool_profile=tool_profile,

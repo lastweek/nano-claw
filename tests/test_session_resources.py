@@ -66,12 +66,20 @@ def test_build_session_resources_hydrates_context_from_snapshot(
         def run_stream(self, _user_message: str):
             return iter(())
 
-    monkeypatch.setattr(
-        "src.server.session_resources.SkillManager",
-        lambda repo_root: SimpleNamespace(discover=lambda: None),
+    fake_skill_manager = SimpleNamespace(discover=lambda: None)
+    fake_bundle = SimpleNamespace(
+        extension_manager=None,
+        skill_manager=fake_skill_manager,
+        mcp_manager=None,
+        subagent_manager=object(),
+        tool_registry=object(),
+        capability_inventory=None,
+        capability_request_manager=None,
     )
-    monkeypatch.setattr("src.server.session_resources.SubagentManager", lambda runtime_config=None: object())
-    monkeypatch.setattr("src.server.session_resources.build_tool_registry", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        "src.server.session_resources.build_runtime_capability_bundle",
+        lambda **_kwargs: fake_bundle,
+    )
     monkeypatch.setattr("src.server.session_resources.LLMClient", lambda runtime_config=None: object())
     monkeypatch.setattr("src.server.session_resources.SessionLogger", lambda *_args, **_kwargs: _FakeLogger())
     monkeypatch.setattr("src.server.session_resources.Agent", FakeAgent)
@@ -134,13 +142,20 @@ def test_build_session_resources_failure_closes_mcp_and_logger(
     def failing_agent(*_args, **_kwargs):
         raise RuntimeError("synthetic runtime build failure")
 
-    monkeypatch.setattr(
-        "src.server.session_resources.SkillManager",
-        lambda repo_root: SimpleNamespace(discover=lambda: None),
+    fake_skill_manager = SimpleNamespace(discover=lambda: None)
+    fake_bundle = SimpleNamespace(
+        extension_manager=None,
+        skill_manager=fake_skill_manager,
+        mcp_manager=fake_mcp,
+        subagent_manager=object(),
+        tool_registry=object(),
+        capability_inventory=None,
+        capability_request_manager=None,
     )
-    monkeypatch.setattr("src.server.session_resources._build_mcp_manager", lambda _cfg: fake_mcp)
-    monkeypatch.setattr("src.server.session_resources.SubagentManager", lambda runtime_config=None: object())
-    monkeypatch.setattr("src.server.session_resources.build_tool_registry", lambda **_kwargs: object())
+    monkeypatch.setattr(
+        "src.server.session_resources.build_runtime_capability_bundle",
+        lambda **_kwargs: fake_bundle,
+    )
     monkeypatch.setattr("src.server.session_resources.LLMClient", lambda runtime_config=None: object())
     monkeypatch.setattr("src.server.session_resources.SessionLogger", fake_logger_factory)
     monkeypatch.setattr("src.server.session_resources.Agent", failing_agent)

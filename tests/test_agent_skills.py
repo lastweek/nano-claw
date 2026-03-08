@@ -54,6 +54,25 @@ class StubLLM:
         return self.responses.pop(0), SimpleNamespace(iteration=None)
 
 
+class DummyTool:
+    """Small schema-only tool stub for prompt tests."""
+
+    def __init__(self, name: str, description: str) -> None:
+        self.name = name
+        self.description = description
+        self.parameters = {"type": "object", "properties": {}, "additionalProperties": False}
+
+    def to_schema(self):
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
+        }
+
+
 def test_system_prompt_includes_repo_and_user_catalog_skills(temp_dir):
     """Repo-local and user-global skills should appear in the system prompt catalog."""
     repo_root = temp_dir / "repo"
@@ -83,6 +102,30 @@ def test_system_prompt_includes_repo_and_user_catalog_skills(temp_dir):
     assert "- terraform: Terraform workflows" in system_prompt
     assert "Prefer visual PDF checks." not in system_prompt
     assert "Use terraform plan first." not in system_prompt
+
+
+def test_system_prompt_includes_missing_capability_guidance_when_tools_exist(temp_dir):
+    """Capability-request guidance should appear only when the capability tools are available."""
+    repo_root = temp_dir / "repo"
+    write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
+    manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
+    manager.discover()
+
+    tools = ToolRegistry()
+    tools.register(LoadSkillTool(manager))
+    tools.register(DummyTool("find_capabilities", "Search missing capabilities."))
+    tools.register(DummyTool("request_capability", "Record a missing capability request."))
+    llm = StubLLM([{"role": "assistant", "content": "Done"}])
+    context = Context.create(cwd=str(repo_root))
+    agent = Agent(llm, tools, context, skill_manager=manager)
+
+    agent.run("help")
+
+    system_prompt = llm.calls[0]["messages"][0]["content"]
+    assert "Missing capability guidance:" in system_prompt
+    assert "Do not invent tool names." in system_prompt
+    assert "find_capabilities" in system_prompt
+    assert "request_capability" in system_prompt
 
 
 def test_pinned_skills_are_preloaded_outside_system_prompt(temp_dir):

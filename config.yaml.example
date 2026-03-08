@@ -70,6 +70,24 @@ macos_tools:
   enable_reminders: true
   enable_messages: true
 
+web_tools:
+  enabled: true
+  timeout_seconds: 15
+  max_response_bytes: 2000000
+  max_content_chars: 20000
+  allow_private_networks: false
+  enable_fetch_url: true
+  enable_read_webpage: true
+  enable_extract_page_links: true
+
+extensions:
+  enabled: true
+  user_root: ~/.nano-claw/extensions
+  repo_root: .nano-claw/extensions
+  runner_timeout_seconds: 60
+  install_timeout_seconds: 30
+  catalogs: []
+
 # MCP (Model Context Protocol) Servers
 # External tool servers that nano-claw can connect to
 mcp:

@@ -148,6 +148,16 @@ def test_build_tool_registry_uses_plan_safe_profiles(monkeypatch, temp_dir):
     """Plan profiles should expose only planning-safe tools."""
     monkeypatch.setenv("NANO_CODER_TEST", "true")
     Config.reload()
+    runtime_config = Config(
+        {
+            "web_tools": {
+                "enabled": True,
+                "enable_fetch_url": True,
+                "enable_read_webpage": True,
+                "enable_extract_page_links": True,
+            }
+        }
+    )
 
     repo_root = temp_dir / "repo"
     repo_root.mkdir()
@@ -160,23 +170,29 @@ def test_build_tool_registry_uses_plan_safe_profiles(monkeypatch, temp_dir):
         subagent_manager=subagent_manager,
         include_subagent_tool=True,
         tool_profile=ToolProfile.BUILD,
+        runtime_config=runtime_config,
     )
     plan_main_tools = build_tool_registry(
         skill_manager=skill_manager,
         subagent_manager=subagent_manager,
         include_subagent_tool=True,
         tool_profile=ToolProfile.PLAN_MAIN,
+        runtime_config=runtime_config,
     )
     plan_subagent_tools = build_tool_registry(
         skill_manager=skill_manager,
         subagent_manager=subagent_manager,
         include_subagent_tool=False,
         tool_profile=ToolProfile.PLAN_SUBAGENT,
+        runtime_config=runtime_config,
     )
 
     assert {"read_file", "write_file", "run_command", "load_skill", "run_subagent"} <= set(build_tools.list_tools())
     assert set(plan_main_tools.list_tools()) == {
+        "extract_page_links",
+        "fetch_url",
         "read_file",
+        "read_webpage",
         "load_skill",
         "run_readonly_command",
         "write_plan",

@@ -7,17 +7,18 @@ from pathlib import Path
 from typing import Callable
 
 from src.agent import Agent
+from src.capabilities import CapabilityInventory, CapabilityRequestManager
 from src.config import Config
 from src.context import Context
 from src.llm import LLMClient
 from src.logger import SessionLogger
 from src.memory import SessionMemory
 from src.mcp import MCPManager
+from src.runtime_refresh import build_runtime_capability_bundle
 from src.skills import SkillManager
 from src.database.session_database import SessionDatabase, SessionSnapshot, deserialize_session_summary
 from src.subagents import SubagentManager
-from src.tools import ToolProfile, ToolRegistry, build_tool_registry
-from src.utils import env_truthy
+from src.tools import ToolProfile, ToolRegistry
 
 
 @dataclass
@@ -29,9 +30,12 @@ class SessionResources:
     logger: SessionLogger
     mcp_manager: MCPManager | None
     skill_manager: SkillManager | None = None
+    extension_manager: object | None = None
     tool_registry: ToolRegistry | None = None
     subagent_manager: SubagentManager | None = None
     memory_store: SessionMemory | None = None
+    capability_inventory: CapabilityInventory | None = None
+    capability_request_manager: CapabilityRequestManager | None = None
 
     def close(self, *, status: str = "completed") -> None:
         cleanup_error: Exception | None = None
@@ -65,23 +69,6 @@ def _build_context_from_snapshot(repo_root: Path, session_snapshot: SessionSnaps
     context.active_skills = []
     context.session_mode = "build"
     return context
-
-
-def _build_mcp_manager(runtime_config: Config) -> MCPManager | None:
-    if not runtime_config.mcp.servers:
-        return None
-    servers_config = [
-        {
-            "name": server.name,
-            "url": server.url,
-            "enabled": server.enabled,
-            "timeout": server.timeout,
-        }
-        for server in runtime_config.mcp.servers
-    ]
-    return MCPManager(servers_config, debug=env_truthy("MCP_DEBUG"))
-
-
 def build_session_resources(
     session_id: str,
     runtime_config: Config,
@@ -96,13 +83,6 @@ def build_session_resources(
 
     # Building these separately keeps SessionRuntime focused on lifecycle and turn execution.
     context = _build_context_from_snapshot(repo_root, session_snapshot)
-    try:
-        skill_manager = SkillManager(repo_root=repo_root, runtime_config=runtime_config)
-    except TypeError:
-        # Some tests stub SkillManager with the legacy constructor signature.
-        skill_manager = SkillManager(repo_root=repo_root)
-    skill_manager.discover()
-    mcp_manager = _build_mcp_manager(runtime_config)
     memory_store = memory_store or SessionMemory(
         repo_root=repo_root,
         runtime_config=runtime_config,
@@ -111,16 +91,17 @@ def build_session_resources(
     logger: SessionLogger | None = None
 
     try:
-        subagent_manager = SubagentManager(runtime_config=runtime_config)
-        tool_registry = build_tool_registry(
-            skill_manager=skill_manager,
-            mcp_manager=mcp_manager,
-            subagent_manager=subagent_manager,
+        capability_bundle = build_runtime_capability_bundle(
+            repo_root=repo_root,
+            runtime_config=runtime_config,
+            tool_profile=ToolProfile.BUILD,
             memory_store=memory_store,
             include_subagent_tool=runtime_config.subagents.enabled,
-            tool_profile=ToolProfile.BUILD,
-            runtime_config=runtime_config,
         )
+        skill_manager = capability_bundle.skill_manager
+        mcp_manager = capability_bundle.mcp_manager
+        subagent_manager = capability_bundle.subagent_manager
+        tool_registry = capability_bundle.tool_registry
         llm_client = LLMClient(runtime_config=runtime_config)
         logger = SessionLogger(
             session_id,
@@ -157,7 +138,10 @@ def build_session_resources(
         logger=logger,
         mcp_manager=mcp_manager,
         skill_manager=skill_manager,
+        extension_manager=capability_bundle.extension_manager,
         tool_registry=tool_registry,
         subagent_manager=subagent_manager,
         memory_store=memory_store,
+        capability_inventory=capability_bundle.capability_inventory,
+        capability_request_manager=capability_bundle.capability_request_manager,
     )

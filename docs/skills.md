@@ -376,6 +376,10 @@ Skills can declare runtime gates in `metadata.requires`:
 
 Ineligible skills remain discoverable in `/skill`, but they are excluded from the prompt catalog and `$skill-name` preloading until their requirements are satisfied. This is useful for default-on features that still need an explicit opt-out flag, such as the macOS helper tool group.
 Repo-local macOS app skills can gate individual helpers like `macos_tools.enable_reminders` or `macos_tools.enable_messages` the same way.
+Skills can also describe hybrid workflows that combine built-in tools with MCP. For example, the repo-local `web-research` skill teaches the agent to use an MCP search provider to find candidate URLs and then use the built-in `read_webpage`, `fetch_url`, and `extract_page_links` tools to inspect the public web.
+Extension bundles can also ship `skills/` directories. Once discovered, those skills behave like normal repo/user skills, keep their eligibility gates, and surface extension provenance in admin/runtime snapshots.
+Use `/runtime reload`, `/extension reload`, or `refresh_runtime_capabilities` after adding a new bundle so the current session picks up the new tools and bundled skills without restarting nano-claw.
+When the agent realizes it is missing a capability, it should first use `find_capabilities`. If it finds an exact loadable skill, it should call `load_skill`; if it finds an on-disk bundle or installable catalog package, it should record that with `request_capability` and tell the user the exact reload/install step.
   - Used as the key for `$skill-name` mentions
   - Must be unique across repo and user skills
 

@@ -131,6 +131,27 @@ def test_user_global_skills_are_catalog_visible(temp_dir):
     assert [catalog_skill.name for catalog_skill in manager.list_catalog_skills()] == ["terraform"]
 
 
+def test_repo_web_research_skill_is_discoverable_and_catalog_visible(temp_dir):
+    """The repo-local web research skill should be available by default."""
+    repo_root = Path(__file__).resolve().parent.parent
+    manager = SkillManager(
+        repo_root=repo_root,
+        user_root=temp_dir / "user-skills",
+        runtime_config=Config({}),
+        platform_name="linux",
+    )
+
+    manager.discover()
+
+    skill = manager.get_skill("web-research")
+    assert skill is not None
+    assert skill.eligible is True
+    assert skill.catalog_visible is True
+    assert "fetch_url" in skill.body
+    assert "MCP search provider" in skill.body
+    assert "web-research" in [catalog_skill.name for catalog_skill in manager.list_catalog_skills()]
+
+
 def test_load_skill_tool_returns_formatted_payload(temp_dir):
     """load_skill should return the skill body and absolute resource paths."""
     repo_root = temp_dir / "repo"
@@ -164,6 +185,8 @@ def test_load_skill_tool_returns_error_for_unknown_skill(temp_dir):
 
     assert result.success is False
     assert result.error == "Unknown skill: missing"
+    assert result.meta["capability_hint"]["kind"] == "skill"
+    assert result.meta["capability_hint"]["name"] == "missing"
 
 
 def test_list_catalog_skills_returns_repo_and_user_visible_skills(temp_dir):
@@ -333,6 +356,8 @@ def test_load_skill_tool_returns_error_for_ineligible_skill(temp_dir):
 
     assert result.success is False
     assert result.error == "Requires config: macos_tools.enable_notes"
+    assert result.meta["capability_hint"]["kind"] == "skill"
+    assert result.meta["capability_hint"]["name"] == "macos-notes"
 
 
 def test_messages_skill_is_eligible_by_default_on_darwin(temp_dir, monkeypatch):

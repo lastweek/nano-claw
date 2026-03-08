@@ -26,6 +26,8 @@ class SessionRuntimeController:
         skill_manager,
         mcp_manager=None,
         subagent_manager=None,
+        capability_inventory=None,
+        capability_request_manager=None,
         apply_tool_profile: Optional[Callable[[ToolProfile], None]] = None,
         logger=None,
         runtime_config=None,
@@ -35,6 +37,8 @@ class SessionRuntimeController:
         self.skill_manager = skill_manager
         self.mcp_manager = mcp_manager
         self.subagent_manager = subagent_manager
+        self.capability_inventory = capability_inventory
+        self.capability_request_manager = capability_request_manager
         self.apply_tool_profile = apply_tool_profile
         self.logger = logger or getattr(agent, "logger", None)
         self.runtime_config = runtime_config or config
@@ -161,6 +165,8 @@ class SessionRuntimeController:
 
         rebuilt_tools = build_tool_registry(
             skill_manager=self.skill_manager,
+            capability_inventory=self.capability_inventory,
+            capability_request_manager=self.capability_request_manager,
             mcp_manager=self.mcp_manager,
             subagent_manager=self.subagent_manager,
             include_subagent_tool=True,

@@ -142,6 +142,32 @@ class TurnDetailResponse(BaseModel):
     updated_at: str
 
 
+class CapabilityRequestResponse(BaseModel):
+    """One runtime-scoped missing-capability request."""
+
+    request_id: str
+    status: str
+    request_type: str
+    summary: str
+    reason: str
+    desired_capability: str
+    package_ref: str | None = None
+    extension_name: str | None = None
+    skill_name: str | None = None
+    tool_name: str | None = None
+    suggested_cli_actions: list[str]
+    created_at: str
+    updated_at: str
+    occurrence_count: int
+
+
+class CapabilityRequestListResponse(BaseModel):
+    """List response for runtime capability requests."""
+
+    session_id: str
+    requests: list[CapabilityRequestResponse]
+
+
 class MemoryWorkspaceResponse(BaseModel):
     """Summary of one session's file-backed memory workspace."""
 

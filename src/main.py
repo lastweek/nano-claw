@@ -20,10 +20,13 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.live import Live
 
+from src.capabilities import CapabilityInventory, CapabilityRequestManager
 from src.context import Context
+from src.extensions import ExtensionManager
 from src.llm import LLMClient
 from src.memory import SessionMemory
 from src.metrics import LLMMetrics
+from src.runtime_refresh import refresh_live_runtime
 from src.session_runtime import SessionRuntimeController
 from src.tools import (
     ToolProfile,
@@ -35,6 +38,7 @@ from src.agent import Agent
 from src.config import Config, config
 from src.mcp import MCPManager
 from src.skills import SkillManager
+from src.tools.runtime_refresh import register_runtime_refresh_tool
 from src.commands import CommandRegistry
 from src.commands import builtin
 from src.statusline import build_prompt_toolbar
@@ -333,6 +337,7 @@ class AppRuntime:
     enable_streaming: bool
     context: Context
     skill_manager: SkillManager
+    extension_manager: ExtensionManager | None
     mcp_manager: MCPManager | None
     subagent_manager: SubagentManager
     tools: object
@@ -480,25 +485,118 @@ def build_agent_runtime(
     """Assemble the runtime dependencies for the interactive CLI."""
     enable_streaming = runtime_config.ui.enable_streaming
     context = Context.create(cwd=str(cwd))
+    memory_store = SessionMemory(repo_root=cwd, runtime_config=runtime_config)
+    extension_manager: ExtensionManager | None = None
+    if runtime_config.extensions.enabled:
+        extension_manager = ExtensionManager(repo_root=cwd, runtime_config=runtime_config)
+        for warning in extension_manager.discover():
+            console.print(f"[yellow]Extension warning: {warning}[/yellow]")
     skill_manager = discover_skills(
         console,
         cwd,
         runtime_config=runtime_config,
         skill_debug=skill_debug,
+    ) if extension_manager is None else SkillManager(
+        repo_root=cwd,
+        runtime_config=runtime_config,
+        extra_roots=extension_manager.get_skill_roots(),
     )
-    memory_store = SessionMemory(repo_root=cwd, runtime_config=runtime_config)
+    if extension_manager is not None:
+        skill_warnings = skill_manager.discover()
+        for warning in skill_warnings:
+            console.print(f"[yellow]Skill warning: {warning}[/yellow]")
+        if skill_debug:
+            discovered_skills = skill_manager.list_skills()
+            console.print(f"[dim][SKILL] discovered {len(discovered_skills)} skill(s)[/dim]")
+            for skill in discovered_skills:
+                console.print(
+                    "[dim]"
+                    f"[SKILL] discovered {skill.name} "
+                    f"(source={skill.source}, catalog={'yes' if skill.catalog_visible else 'no'}, "
+                    f"eligible={'yes' if skill.eligible else 'no'})"
+                    "[/dim]"
+                )
 
     llm_client = LLMClient(runtime_config=runtime_config)
     mcp_manager = build_mcp_manager(console, runtime_config)
     subagent_manager = SubagentManager(runtime_config=runtime_config)
+    capability_request_manager = CapabilityRequestManager()
+    capability_inventory = CapabilityInventory(
+        repo_root=cwd,
+        runtime_config=runtime_config,
+    )
+    agent: Agent | None = None
+    input_helper: InputHelper | None = None
+    runtime_state: dict[str, object] = {
+        "runtime_config": runtime_config,
+        "extension_manager": extension_manager,
+        "skill_manager": skill_manager,
+        "mcp_manager": mcp_manager,
+        "subagent_manager": subagent_manager,
+        "capability_inventory": capability_inventory,
+        "capability_request_manager": capability_request_manager,
+    }
+
+    def current_tool_profile() -> ToolProfile:
+        return ToolProfile.PLAN_MAIN if context.get_session_mode() == "plan" else ToolProfile.BUILD
+
+    def refresh_callback(reason: str | None) -> dict:
+        assert agent is not None
+        bundle, outcome = refresh_live_runtime(
+            repo_root=cwd,
+            agent=agent,
+            session_context=context,
+            current_skill_manager=runtime_state["skill_manager"],
+            current_tool_registry=runtime_state.get("tools"),
+            current_mcp_manager=runtime_state["mcp_manager"],
+            capability_request_manager=capability_request_manager,
+            memory_store=memory_store,
+            tool_profile=current_tool_profile(),
+            config_loader=Config.reload,
+            include_subagent_tool=True,
+            input_helper=input_helper,
+            refresh_callback=refresh_callback,
+            reason=reason,
+        )
+        runtime_state["runtime_config"] = bundle.runtime_config
+        runtime_state["extension_manager"] = bundle.extension_manager
+        runtime_state["skill_manager"] = bundle.skill_manager
+        runtime_state["mcp_manager"] = bundle.mcp_manager
+        runtime_state["subagent_manager"] = bundle.subagent_manager
+        runtime_state["capability_inventory"] = bundle.capability_inventory
+        runtime_state["capability_request_manager"] = bundle.capability_request_manager
+        runtime_state["tools"] = bundle.tool_registry
+        cmd_context["tools"] = bundle.tool_registry
+        cmd_context["skill_manager"] = bundle.skill_manager
+        cmd_context["extension_manager"] = bundle.extension_manager
+        cmd_context["mcp_manager"] = bundle.mcp_manager
+        cmd_context["subagent_manager"] = bundle.subagent_manager
+        cmd_context["runtime_config"] = bundle.runtime_config
+        cmd_context["capability_request_manager"] = bundle.capability_request_manager
+        session_runtime.skill_manager = bundle.skill_manager
+        session_runtime.mcp_manager = bundle.mcp_manager
+        session_runtime.subagent_manager = bundle.subagent_manager
+        session_runtime.runtime_config = bundle.runtime_config
+        session_runtime.capability_inventory = bundle.capability_inventory
+        session_runtime.capability_request_manager = bundle.capability_request_manager
+        return outcome.to_payload()
+
     tools, tool_report = build_tool_registry_with_report(
         skill_manager=skill_manager,
+        capability_inventory=capability_inventory,
+        capability_request_manager=capability_request_manager,
+        extension_manager=extension_manager,
         mcp_manager=mcp_manager,
         subagent_manager=subagent_manager,
         memory_store=memory_store,
         include_subagent_tool=runtime_config.subagents.enabled,
         tool_profile=ToolProfile.BUILD,
         runtime_config=runtime_config,
+    )
+    register_runtime_refresh_tool(
+        tools,
+        tool_profile=ToolProfile.BUILD,
+        refresh_callback=refresh_callback,
     )
     if tool_debug:
         print_tool_debug_report(console, tool_report)
@@ -511,33 +609,47 @@ def build_agent_runtime(
         runtime_config=runtime_config,
         memory_store=memory_store,
     )
+    runtime_state["tools"] = tools
 
     registry = CommandRegistry()
     builtin.register_all(registry)
 
     cmd_context: dict[str, object] = {
         "agent": agent,
+        "extension_manager": extension_manager,
         "mcp_manager": mcp_manager,
         "tools": tools,
         "skill_manager": skill_manager,
         "session_context": context,
         "subagent_manager": subagent_manager,
         "memory_store": memory_store,
+        "runtime_config": runtime_config,
+        "runtime_refresh_callback": refresh_callback,
+        "capability_request_manager": capability_request_manager,
     }
 
     def apply_tool_profile(tool_profile: ToolProfile) -> None:
         """Rebuild the parent tool registry for the requested session tool profile."""
         rebuilt_tools = build_tool_registry(
-            skill_manager=skill_manager,
-            mcp_manager=mcp_manager,
-            subagent_manager=subagent_manager,
+            skill_manager=runtime_state["skill_manager"],
+            capability_inventory=runtime_state["capability_inventory"],
+            capability_request_manager=runtime_state["capability_request_manager"],
+            extension_manager=runtime_state["extension_manager"],
+            mcp_manager=runtime_state["mcp_manager"],
+            subagent_manager=runtime_state["subagent_manager"],
             memory_store=memory_store,
             include_subagent_tool=True,
             tool_profile=tool_profile,
-            runtime_config=runtime_config,
+            runtime_config=runtime_state["runtime_config"],
+        )
+        register_runtime_refresh_tool(
+            rebuilt_tools,
+            tool_profile=tool_profile,
+            refresh_callback=refresh_callback,
         )
         agent.set_tool_registry(rebuilt_tools)
         cmd_context["tools"] = rebuilt_tools
+        runtime_state["tools"] = rebuilt_tools
 
     session_runtime = SessionRuntimeController(
         session_context=context,
@@ -548,6 +660,8 @@ def build_agent_runtime(
         apply_tool_profile=apply_tool_profile,
         logger=agent.logger,
         runtime_config=runtime_config,
+        capability_inventory=capability_inventory,
+        capability_request_manager=capability_request_manager,
     )
     cmd_context["session_runtime_controller"] = session_runtime
 
@@ -591,6 +705,7 @@ def build_agent_runtime(
         enable_streaming=enable_streaming,
         context=context,
         skill_manager=skill_manager,
+        extension_manager=extension_manager,
         mcp_manager=mcp_manager,
         subagent_manager=subagent_manager,
         tools=tools,

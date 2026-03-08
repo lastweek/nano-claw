@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.config import Config, config
+from src.extensions import ExtensionManager
 from src.memory import SessionMemory
 from src.server.admin_routes import router as admin_router
 from src.server.event_bus import TurnEventBus
@@ -57,6 +58,8 @@ def create_app(
     )
     static_dir = Path(__file__).resolve().parent / "static"
     admin_static_dir = Path(__file__).resolve().parent / "static_admin"
+    extension_manager = ExtensionManager(repo_root=resolved_repo_root, runtime_config=resolved_config)
+    extension_manager.discover()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -71,9 +74,11 @@ def create_app(
 
     app = FastAPI(title="nano-claw HTTP", lifespan=lifespan)
     app.state.runtime_config = resolved_config
+    app.state.runtime_config_loader = Config.reload
     app.state.repo_root = resolved_repo_root
     app.state.database = database
     app.state.memory_store = memory_store
+    app.state.extension_manager = extension_manager
     app.state.event_bus = event_bus
     app.state.session_registry = session_registry
     app.state.static_dir = static_dir

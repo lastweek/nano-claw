@@ -22,6 +22,19 @@ def test_server_defaults(monkeypatch):
     monkeypatch.delenv("MACOS_TOOLS_ENABLE_NOTES", raising=False)
     monkeypatch.delenv("MACOS_TOOLS_ENABLE_REMINDERS", raising=False)
     monkeypatch.delenv("MACOS_TOOLS_ENABLE_MESSAGES", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_ENABLED", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_MAX_RESPONSE_BYTES", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_MAX_CONTENT_CHARS", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_ALLOW_PRIVATE_NETWORKS", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_ENABLE_FETCH_URL", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_ENABLE_READ_WEBPAGE", raising=False)
+    monkeypatch.delenv("WEB_TOOLS_ENABLE_EXTRACT_PAGE_LINKS", raising=False)
+    monkeypatch.delenv("EXTENSIONS_ENABLED", raising=False)
+    monkeypatch.delenv("EXTENSIONS_USER_ROOT", raising=False)
+    monkeypatch.delenv("EXTENSIONS_REPO_ROOT", raising=False)
+    monkeypatch.delenv("EXTENSIONS_RUNNER_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", raising=False)
 
     runtime_config = Config()
 
@@ -49,6 +62,19 @@ def test_server_defaults(monkeypatch):
     assert runtime_config.macos_tools.enable_notes is True
     assert runtime_config.macos_tools.enable_reminders is True
     assert runtime_config.macos_tools.enable_messages is True
+    assert runtime_config.web_tools.enabled is True
+    assert runtime_config.web_tools.timeout_seconds == 15
+    assert runtime_config.web_tools.max_response_bytes == 2_000_000
+    assert runtime_config.web_tools.max_content_chars == 20_000
+    assert runtime_config.web_tools.allow_private_networks is False
+    assert runtime_config.web_tools.enable_fetch_url is True
+    assert runtime_config.web_tools.enable_read_webpage is True
+    assert runtime_config.web_tools.enable_extract_page_links is True
+    assert runtime_config.extensions.enabled is True
+    assert runtime_config.extensions.user_root == "~/.nano-claw/extensions"
+    assert runtime_config.extensions.repo_root == ".nano-claw/extensions"
+    assert runtime_config.extensions.runner_timeout_seconds == 60
+    assert runtime_config.extensions.install_timeout_seconds == 30
 
 
 def test_server_env_overrides(monkeypatch):
@@ -74,6 +100,18 @@ def test_server_env_overrides(monkeypatch):
     monkeypatch.setenv("MACOS_TOOLS_TIMEOUT_SECONDS", "15")
     monkeypatch.setenv("MACOS_TOOLS_ENABLE_CALENDAR", "false")
     monkeypatch.setenv("MACOS_TOOLS_ENABLE_MESSAGES", "false")
+    monkeypatch.setenv("WEB_TOOLS_ENABLED", "true")
+    monkeypatch.setenv("WEB_TOOLS_TIMEOUT_SECONDS", "21")
+    monkeypatch.setenv("WEB_TOOLS_MAX_RESPONSE_BYTES", "3456")
+    monkeypatch.setenv("WEB_TOOLS_MAX_CONTENT_CHARS", "789")
+    monkeypatch.setenv("WEB_TOOLS_ALLOW_PRIVATE_NETWORKS", "true")
+    monkeypatch.setenv("WEB_TOOLS_ENABLE_FETCH_URL", "false")
+    monkeypatch.setenv("WEB_TOOLS_ENABLE_EXTRACT_PAGE_LINKS", "false")
+    monkeypatch.setenv("EXTENSIONS_ENABLED", "false")
+    monkeypatch.setenv("EXTENSIONS_USER_ROOT", "/tmp/extensions-user")
+    monkeypatch.setenv("EXTENSIONS_REPO_ROOT", ".nano-claw/custom-extensions")
+    monkeypatch.setenv("EXTENSIONS_RUNNER_TIMEOUT_SECONDS", "88")
+    monkeypatch.setenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", "22")
 
     runtime_config = Config()
 
@@ -98,3 +136,15 @@ def test_server_env_overrides(monkeypatch):
     assert runtime_config.macos_tools.timeout_seconds == 15
     assert runtime_config.macos_tools.enable_calendar is False
     assert runtime_config.macos_tools.enable_messages is False
+    assert runtime_config.web_tools.enabled is True
+    assert runtime_config.web_tools.timeout_seconds == 21
+    assert runtime_config.web_tools.max_response_bytes == 3456
+    assert runtime_config.web_tools.max_content_chars == 789
+    assert runtime_config.web_tools.allow_private_networks is True
+    assert runtime_config.web_tools.enable_fetch_url is False
+    assert runtime_config.web_tools.enable_extract_page_links is False
+    assert runtime_config.extensions.enabled is False
+    assert runtime_config.extensions.user_root == "/tmp/extensions-user"
+    assert runtime_config.extensions.repo_root == ".nano-claw/custom-extensions"
+    assert runtime_config.extensions.runner_timeout_seconds == 88
+    assert runtime_config.extensions.install_timeout_seconds == 22

@@ -97,6 +97,43 @@ class TestConfigDefaults:
         assert config.macos_tools.enable_reminders is True
         assert config.macos_tools.enable_messages is True
 
+    def test_web_tools_defaults(self, monkeypatch):
+        """Test public-web tool config defaults."""
+        monkeypatch.delenv("WEB_TOOLS_ENABLED", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_TIMEOUT_SECONDS", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_MAX_RESPONSE_BYTES", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_MAX_CONTENT_CHARS", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_ALLOW_PRIVATE_NETWORKS", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_ENABLE_FETCH_URL", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_ENABLE_READ_WEBPAGE", raising=False)
+        monkeypatch.delenv("WEB_TOOLS_ENABLE_EXTRACT_PAGE_LINKS", raising=False)
+        config = Config()
+        assert config.web_tools.enabled is True
+        assert config.web_tools.timeout_seconds == 15
+        assert config.web_tools.max_response_bytes == 2_000_000
+        assert config.web_tools.max_content_chars == 20_000
+        assert config.web_tools.allow_private_networks is False
+        assert config.web_tools.enable_fetch_url is True
+        assert config.web_tools.enable_read_webpage is True
+        assert config.web_tools.enable_extract_page_links is True
+
+    def test_extensions_defaults(self, monkeypatch):
+        """Test runtime extension config defaults."""
+        monkeypatch.delenv("NANO_CODER_TEST", raising=False)
+        monkeypatch.delenv("NANO_CLAW_TEST_ROOT", raising=False)
+        monkeypatch.delenv("EXTENSIONS_ENABLED", raising=False)
+        monkeypatch.delenv("EXTENSIONS_USER_ROOT", raising=False)
+        monkeypatch.delenv("EXTENSIONS_REPO_ROOT", raising=False)
+        monkeypatch.delenv("EXTENSIONS_RUNNER_TIMEOUT_SECONDS", raising=False)
+        monkeypatch.delenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", raising=False)
+        config = Config()
+        assert config.extensions.enabled is True
+        assert config.extensions.user_root == "~/.nano-claw/extensions"
+        assert config.extensions.repo_root == ".nano-claw/extensions"
+        assert config.extensions.runner_timeout_seconds == 60
+        assert config.extensions.install_timeout_seconds == 30
+        assert config.extensions.catalogs == []
+
 
 class TestConfigValidation:
     """Test configuration validation."""
@@ -167,6 +204,8 @@ class TestConfigSingleton:
         assert hasattr(config, 'subagents')
         assert hasattr(config, 'plan')
         assert hasattr(config, 'macos_tools')
+        assert hasattr(config, 'web_tools')
+        assert hasattr(config, 'extensions')
         assert isinstance(config.llm, LLMConfig)
         assert isinstance(config.logging, LoggingConfig)
 
@@ -237,6 +276,38 @@ class TestConfigEnvOverrides:
         assert config.macos_tools.timeout_seconds == 25
         assert config.macos_tools.enable_notes is False
         assert config.macos_tools.enable_messages is False
+
+    def test_web_tool_env_override(self, monkeypatch):
+        """Test WEB_TOOLS_* env variable overrides."""
+        monkeypatch.setenv("WEB_TOOLS_ENABLED", "true")
+        monkeypatch.setenv("WEB_TOOLS_TIMEOUT_SECONDS", "20")
+        monkeypatch.setenv("WEB_TOOLS_MAX_RESPONSE_BYTES", "12345")
+        monkeypatch.setenv("WEB_TOOLS_MAX_CONTENT_CHARS", "678")
+        monkeypatch.setenv("WEB_TOOLS_ALLOW_PRIVATE_NETWORKS", "true")
+        monkeypatch.setenv("WEB_TOOLS_ENABLE_READ_WEBPAGE", "false")
+        monkeypatch.setenv("WEB_TOOLS_ENABLE_EXTRACT_PAGE_LINKS", "false")
+        config = Config()
+        assert config.web_tools.enabled is True
+        assert config.web_tools.timeout_seconds == 20
+        assert config.web_tools.max_response_bytes == 12345
+        assert config.web_tools.max_content_chars == 678
+        assert config.web_tools.allow_private_networks is True
+        assert config.web_tools.enable_read_webpage is False
+        assert config.web_tools.enable_extract_page_links is False
+
+    def test_extension_env_override(self, monkeypatch):
+        """Test EXTENSIONS_* env variable overrides."""
+        monkeypatch.setenv("EXTENSIONS_ENABLED", "false")
+        monkeypatch.setenv("EXTENSIONS_USER_ROOT", "/tmp/extensions-user")
+        monkeypatch.setenv("EXTENSIONS_REPO_ROOT", ".nano-claw/custom-extensions")
+        monkeypatch.setenv("EXTENSIONS_RUNNER_TIMEOUT_SECONDS", "99")
+        monkeypatch.setenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", "44")
+        config = Config()
+        assert config.extensions.enabled is False
+        assert config.extensions.user_root == "/tmp/extensions-user"
+        assert config.extensions.repo_root == ".nano-claw/custom-extensions"
+        assert config.extensions.runner_timeout_seconds == 99
+        assert config.extensions.install_timeout_seconds == 44
 
     def test_max_parallel_env_override(self, monkeypatch):
         """Test SUBAGENTS_MAX_PARALLEL env variable override."""

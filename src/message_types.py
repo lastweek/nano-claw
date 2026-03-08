@@ -43,5 +43,6 @@ class ChatMessage(TypedDict, total=False):
 class ToolResultPayload(TypedDict, total=False):
     """Common tool result payload shared across tool execution paths."""
 
-    output: str
+    output: Any
     error: str
+    capability_hint: dict[str, Any]

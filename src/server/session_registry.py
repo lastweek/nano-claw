@@ -111,6 +111,10 @@ class SessionRegistry:
         with self._lock:
             return sorted(self._runtimes.keys())
 
+    def update_runtime_config(self, runtime_config: Config) -> None:
+        """Replace the default config used for future runtime construction."""
+        self._runtime_config = runtime_config
+
     def snapshot_runtime(self, session_id: str) -> dict | None:
         """Return one runtime snapshot, or None when runtime is not loaded."""
         runtime = self.get_runtime(session_id)

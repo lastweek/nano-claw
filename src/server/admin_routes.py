@@ -26,6 +26,7 @@ from src.server.admin_collectors_core import (
 )
 from src.server.admin_collectors_runtime import (
     collect_agent_runtime,
+    collect_extensions,
     collect_log_sessions,
     collect_mcp,
     collect_runtime_detail,
@@ -139,6 +140,33 @@ def admin_subagents(request: Request, session_id: str | None = None) -> dict:
 @router.get("/api/v1/admin/log-sessions")
 def admin_log_sessions(request: Request, session_id: str | None = None) -> dict:
     return collect_log_sessions(request.app, session_id)
+
+
+@router.get("/api/v1/admin/extensions")
+def admin_extensions(request: Request) -> dict:
+    return collect_extensions(request.app)
+
+
+@router.post("/api/v1/admin/extensions/install")
+def admin_install_extension(request: Request, payload: dict) -> dict:
+    package_ref = str(payload.get("package") or "").strip()
+    if not package_ref:
+        raise HTTPException(status_code=400, detail="package is required")
+    try:
+        result = request.app.state.extension_manager.install_from_catalog(package_ref)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {
+        "package": package_ref,
+        "name": result.extension.name,
+        "version": result.extension.version,
+        "install_path": str(result.install_path),
+        "tool_count": len(result.extension.tool_specs),
+        "warnings": request.app.state.extension_manager.get_warnings(),
+    }
 
 
 @router.get("/api/v1/admin/log-files")

@@ -16,7 +16,7 @@ It also includes a small localhost HTTP wrapper so you can drive the same repo-s
 
 ## What You Get
 
-- Built-in tools for `read_file`, `write_file`, `run_command`, `load_skill`, and `run_subagent`
+- Built-in tools for repo work, self-extension, and public-web reading: `read_file`, `write_file`, `run_command`, `load_skill`, `run_subagent`, `find_capabilities`, `request_capability`, `fetch_url`, `read_webpage`, and `extract_page_links`
 - Optional macOS helper tools for Finder, Calendar.app, and Notes.app when enabled
 - Streaming terminal UX with live activity updates while the model is thinking
 - Optional local HTTP/SSE server with a tiny browser UI for session-based turns
@@ -110,7 +110,7 @@ events.
 
 ### Tools
 
-nano-claw uses the same tool-calling loop for built-in tools and MCP-provided tools. The default repo-workflow set covers reading files, writing files, running shell commands, loading skills, and delegating child tasks.
+nano-claw uses the same tool-calling loop for built-in tools and MCP-provided tools. The default repo-workflow set covers reading files, writing files, running shell commands, loading skills, delegating child tasks, and reading public webpages.
 
 ### Skills
 
@@ -126,6 +126,17 @@ Discovery roots:
 ### MCP
 
 MCP servers are configured in `config.yaml` and initialized at startup. Their tools are registered into the same tool system as built-in tools, so the model can use them through the same request loop and you can inspect them with `/mcp`.
+
+The intended internet workflow is hybrid: core handles URL fetching and page reading, while search providers come from MCP. That keeps the core small and lets you swap search backends without changing nano-claw itself.
+
+### Live Self-Extension
+
+When the current session is missing a tool or skill, the agent can inspect available capabilities and raise a structured request instead of guessing. The intended workflow is:
+
+- `find_capabilities` to search active tools, loadable skills, on-disk extension bundles that need reload, and installable extension catalog packages
+- `request_capability` to record the missing capability for the current session
+- user action such as `/extension install <catalog>:<package>` or `/runtime reload`
+- `refresh_runtime_capabilities` or `/runtime reload` so the session picks up the new capability
 
 ### Subagents
 
@@ -153,6 +164,7 @@ Convenience symlinks are also maintained at `~/.nano-claw/sessions/latest-sessio
 ## Common Commands
 
 - `/help` to list commands
+- `/capability` to inspect, dismiss, and resolve missing-capability requests
 - `/tool` to inspect available tools
 - `/skill` to list, pin, clear, inspect, and reload skills
 - `/mcp` to inspect configured MCP servers and tools
@@ -186,6 +198,8 @@ Useful settings to know early:
 - `context.auto_compact`
 - `plan.enabled`
 - `macos_tools.enabled`
+- `web_tools.enabled`
+- `extensions.enabled`
 
 `logging.async_mode` routes session-log writes through a background transport while keeping the same on-disk log format. `subagents.max_parallel` caps concurrent child-agent threads independently from the per-turn delegation limit.
 By default, `server.db_path` points to `~/.nano-claw/state.db`.
@@ -205,6 +219,38 @@ macos_tools:
 ```
 
 On macOS, nano-claw enables bounded `finder_action`, `calendar_action`, `notes_action`, `reminders_action`, and `messages_action` tools by default. Set `macos_tools.enabled: false` to opt out. Unsupported platforms skip these tools at startup and report the platform reason in `TOOL_DEBUG=1` output. The first run on macOS may require granting Automation access in macOS System Settings. `messages_action.read_recent_messages` is best-effort because some chat objects do not expose readable history through the Messages scripting surface.
+
+Example public-web tool config:
+
+```yaml
+web_tools:
+  enabled: true
+  timeout_seconds: 15
+  max_response_bytes: 2000000
+  max_content_chars: 20000
+  allow_private_networks: false
+  enable_fetch_url: true
+  enable_read_webpage: true
+  enable_extract_page_links: true
+```
+
+`fetch_url`, `read_webpage`, and `extract_page_links` are enabled by default in normal build sessions, build subagents, and main planning sessions. They only allow public `http` and `https` targets unless `web_tools.allow_private_networks` is set to `true`. Search is not built into core; add an MCP search provider and use that to find URLs before reading them with the built-in web tools.
+
+Example runtime extension config:
+
+```yaml
+extensions:
+  enabled: true
+  user_root: ~/.nano-claw/extensions
+  repo_root: .nano-claw/extensions
+  runner_timeout_seconds: 60
+  install_timeout_seconds: 30
+  catalogs: []
+```
+
+`extensions.enabled` turns on live-discoverable out-of-process tool bundles under the repo-local and user-global extension roots. Add new bundles, then run `/runtime reload`, `/extension reload`, or `refresh_runtime_capabilities` to activate them without restarting the process. Curated remote installs are explicit-user actions through `/extension install <catalog>:<package>` or `POST /api/v1/admin/extensions/install`; search/install approval is not delegated to normal tool calls.
+
+If the agent discovers it needs a capability that is not active yet, it should use `find_capabilities` and `request_capability` instead of inventing tool names. Exact catalog matches should be reported with the concrete `/extension install ...` and `/runtime reload` steps.
 
 Example MCP config:
 
@@ -240,6 +286,10 @@ Key endpoints:
 - `POST /api/v1/sessions`
 - `GET /api/v1/sessions/{session_id}`
 - `DELETE /api/v1/sessions/{session_id}`
+- `POST /api/v1/sessions/{session_id}/runtime/reload`
+- `GET /api/v1/sessions/{session_id}/capability-requests`
+- `POST /api/v1/sessions/{session_id}/capability-requests/{request_id}/dismiss`
+- `POST /api/v1/sessions/{session_id}/capability-requests/{request_id}/resolve`
 - `POST /api/v1/sessions/{session_id}/turns`
 - `GET /api/v1/turns/{turn_id}`
 - `GET /api/v1/turns/{turn_id}/stream`
@@ -263,6 +313,7 @@ Primary admin resources:
 - `ToolRegistryState`
 - `SkillCatalogState`
 - `MCPServerState`
+- `ExtensionBundle`
 - `SubagentRun`
 - `LogSession`
 - `LogFile`

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.capabilities import build_capability_hint
 from src.tools import Tool, ToolResult
 
 if TYPE_CHECKING:
@@ -42,8 +43,30 @@ class LoadSkillTool(Tool):
         try:
             payload = self.skill_manager.format_skill_for_tool(skill_name)
         except KeyError:
-            return ToolResult(success=False, error=f"Unknown skill: {skill_name}")
+            return ToolResult(
+                success=False,
+                error=f"Unknown skill: {skill_name}",
+                meta={
+                    "capability_hint": build_capability_hint(
+                        query=skill_name,
+                        message=f"Skill '{skill_name}' is not available in this session.",
+                        kind="skill",
+                        name=skill_name,
+                    )
+                },
+            )
         except SkillUnavailableError as exc:
-            return ToolResult(success=False, error=exc.reason)
+            return ToolResult(
+                success=False,
+                error=exc.reason,
+                meta={
+                    "capability_hint": build_capability_hint(
+                        query=skill_name,
+                        message=exc.reason,
+                        kind="skill",
+                        name=skill_name,
+                    )
+                },
+            )
 
         return ToolResult(success=True, data=payload)

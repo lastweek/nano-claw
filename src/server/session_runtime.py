@@ -7,13 +7,14 @@ from dataclasses import dataclass
 import logging
 from pathlib import Path
 from queue import Queue
-from threading import Lock, Thread
+from threading import Lock, Thread, current_thread
 from time import monotonic
 from typing import Any
 
 from src.config import Config
 from src.context import Context
 from src.mcp import MCPManager
+from src.runtime_refresh import refresh_live_runtime
 from src.server.event_bus import TurnEventBus
 from src.server.session_resources import (
     SessionResources,
@@ -21,6 +22,7 @@ from src.server.session_resources import (
     build_session_resources,
 )
 from src.database.session_database import SessionDatabase, TurnRecord
+from src.tools import ToolProfile
 
 
 class SessionBusyError(Exception):
@@ -63,12 +65,15 @@ class SessionRuntime:
         self.repo_root = repo_root
         self.database = database
         self.event_bus = event_bus
+        self._tool_profile = ToolProfile.BUILD
+        self._config_loader = Config.reload
         self._resources: SessionResources = resources_factory(
             session_id,
             runtime_config,
             repo_root,
             database,
         )
+        self._attach_refresh_tool()
         self._turn_queue: Queue[TurnWorkItem | object] = Queue()
         self._lock = Lock()
         self._event_seq: dict[str, int] = {}
@@ -127,6 +132,50 @@ class SessionRuntime:
                 SESSION_RUNTIME_CLOSE_TIMEOUT_SECONDS,
             )
 
+    def reload_capabilities(
+        self,
+        *,
+        reason: str | None = None,
+        allow_while_busy: bool = False,
+    ) -> dict[str, Any]:
+        """Rebuild config-backed skills, MCP, extensions, and tools for this runtime."""
+        with self._lock:
+            busy = self._active_turn_id is not None or self._pending_turn_count > 0
+            if self._closed:
+                raise SessionClosedError(f"Session is closed: {self.session_id}")
+        if busy and not allow_while_busy:
+            raise SessionBusyError(f"Session is busy: {self.session_id}")
+        if busy and allow_while_busy and current_thread() is not self._worker:
+            raise SessionBusyError(f"Session is busy: {self.session_id}")
+
+        bundle, outcome = refresh_live_runtime(
+            repo_root=self.repo_root,
+            agent=self._resources.agent,
+            session_context=self._resources.context,
+            current_skill_manager=self._resources.skill_manager,
+            current_tool_registry=self._resources.tool_registry,
+            current_mcp_manager=self._resources.mcp_manager,
+            capability_request_manager=self._resources.capability_request_manager,
+            memory_store=self._resources.memory_store,
+            tool_profile=self._tool_profile,
+            config_loader=self._config_loader,
+            include_subagent_tool=True,
+            refresh_callback=self._refresh_callback,
+            reason=reason,
+        )
+        self.runtime_config = bundle.runtime_config
+        self._resources.extension_manager = bundle.extension_manager
+        self._resources.skill_manager = bundle.skill_manager
+        self._resources.mcp_manager = bundle.mcp_manager
+        self._resources.subagent_manager = bundle.subagent_manager
+        self._resources.tool_registry = bundle.tool_registry
+        self._resources.capability_inventory = bundle.capability_inventory
+        self._resources.capability_request_manager = bundle.capability_request_manager
+        self._mcp_health_cache_initialized = False
+        self._mcp_health_cache = {}
+        self._mcp_health_cache_at = 0.0
+        return outcome.to_payload()
+
     def snapshot(self) -> dict[str, Any]:
         """Return a best-effort runtime diagnostic snapshot."""
         with self._lock:
@@ -172,9 +221,31 @@ class SessionRuntime:
             },
             "tools": self._build_tool_snapshot(),
             "skills": self._build_skill_snapshot(),
+            "capability_requests": self._build_capability_request_snapshot(),
             "mcp": self._build_mcp_snapshot(),
             "subagents": self._build_subagent_snapshot(),
         }
+
+    def list_capability_requests(self) -> list[dict[str, Any]]:
+        """Return all session-scoped capability requests."""
+        manager = self._resources.capability_request_manager
+        if manager is None:
+            return []
+        return [request.to_payload() for request in manager.list_requests()]
+
+    def dismiss_capability_request(self, request_id: str) -> dict[str, Any]:
+        """Dismiss one pending capability request."""
+        manager = self._resources.capability_request_manager
+        if manager is None:
+            raise KeyError(request_id)
+        return manager.dismiss_request(request_id).to_payload()
+
+    def resolve_capability_request(self, request_id: str) -> dict[str, Any]:
+        """Resolve one capability request manually."""
+        manager = self._resources.capability_request_manager
+        if manager is None:
+            raise KeyError(request_id)
+        return manager.resolve_request(request_id).to_payload()
 
     def _emit_event(self, turn_id: str, event_name: str, payload: dict) -> None:
         with self._lock:
@@ -313,10 +384,12 @@ class SessionRuntime:
 
         tool_state: list[dict[str, Any]] = []
         for name in sorted(tool_registry.list_tools()):
-            source = "mcp" if ":" in name else "builtin"
+            tool = tool_registry.get(name)
+            source = str(getattr(tool, "tool_source", "mcp" if ":" in name else "builtin"))
             server = name.split(":", 1)[0] if source == "mcp" and ":" in name else None
             display_name = name.split(":", 1)[1] if server else name
-            tool = tool_registry.get(name)
+            extension_name = getattr(tool, "extension_name", None)
+            extension_version = getattr(tool, "extension_version", None)
 
             if tool is None:
                 tool_state.append(
@@ -325,6 +398,8 @@ class SessionRuntime:
                         "display_name": display_name,
                         "source": source,
                         "server": server,
+                        "extension_name": extension_name,
+                        "extension_version": extension_version,
                         "description": "",
                         "parameters_schema": {"type": "object", "properties": {}},
                         "required_parameters": [],
@@ -364,6 +439,8 @@ class SessionRuntime:
                     "display_name": display_name,
                     "source": source,
                     "server": server,
+                    "extension_name": extension_name,
+                    "extension_version": extension_version,
                     "description": description,
                     "parameters_schema": parameters_schema,
                     "required_parameters": required_parameters,
@@ -388,11 +465,42 @@ class SessionRuntime:
                     "eligibility_reason": skill.eligibility_reason,
                     "body_line_count": skill.body_line_count,
                     "short_description": skill.short_description,
+                    "extension_name": getattr(skill, "extension_name", None),
+                    "extension_version": getattr(skill, "extension_version", None),
+                    "extension_install_scope": getattr(skill, "extension_install_scope", None),
                 }
                 for skill in skill_manager.list_skills()
             ],
             "warnings": skill_manager.get_warnings(),
         }
+
+    def _build_capability_request_snapshot(self) -> dict[str, Any]:
+        manager = self._resources.capability_request_manager
+        if manager is None:
+            return {"pending_count": 0, "requests": []}
+        requests = [request.to_payload() for request in manager.list_requests()]
+        return {
+            "pending_count": manager.pending_count(),
+            "requests": requests,
+        }
+
+    def _refresh_callback(self, reason: str | None) -> dict[str, Any]:
+        """Tool-facing runtime refresh callback."""
+        return self.reload_capabilities(reason=reason, allow_while_busy=True)
+
+    def _attach_refresh_tool(self) -> None:
+        """Ensure the live registry exposes the runtime refresh control-plane tool."""
+        from src.tools.runtime_refresh import register_runtime_refresh_tool
+
+        if self._resources.tool_registry is None:
+            return
+        register_runtime_refresh_tool(
+            self._resources.tool_registry,
+            tool_profile=self._tool_profile,
+            refresh_callback=self._refresh_callback,
+        )
+        if hasattr(self._resources.agent, "set_tool_registry"):
+            self._resources.agent.set_tool_registry(self._resources.tool_registry)
 
     def _build_mcp_snapshot(self) -> dict[str, Any]:
         mcp_manager = self._resources.mcp_manager

@@ -58,6 +58,16 @@ def make_runtime_config(temp_dir: Path, **overrides):
             "max_per_turn": 1,
             "default_timeout_seconds": 60,
         },
+        "web_tools": {
+            "enabled": True,
+            "timeout_seconds": 15,
+            "max_response_bytes": 2_000_000,
+            "max_content_chars": 20_000,
+            "allow_private_networks": False,
+            "enable_fetch_url": True,
+            "enable_read_webpage": True,
+            "enable_extract_page_links": True,
+        },
     }
     for key, value in overrides.items():
         payload[key] = value
@@ -884,11 +894,18 @@ def test_build_agent_runtime_prints_tool_debug_report_on_darwin(temp_dir, monkey
         assert "[TOOL] profile=build" in normalized
         assert "[TOOL] registered tools:" in normalized
         assert "[TOOL] macos_tools: registered" in normalized
+        assert "[TOOL] web_tools: registered" in normalized
+        assert "[TOOL] capability_tools: registered" in normalized
         assert "[TOOL] finder_action: registered" in normalized
         assert "[TOOL] calendar_action: registered" in normalized
         assert "[TOOL] notes_action: registered" in normalized
         assert "[TOOL] reminders_action: registered" in normalized
         assert "[TOOL] messages_action: registered" in normalized
+        assert "[TOOL] fetch_url: registered" in normalized
+        assert "[TOOL] read_webpage: registered" in normalized
+        assert "[TOOL] extract_page_links: registered" in normalized
+        assert "[TOOL] find_capabilities: registered" in normalized
+        assert "[TOOL] request_capability: registered" in normalized
     finally:
         runtime.agent.logger.close()
         if runtime.mcp_manager:
@@ -915,11 +932,18 @@ def test_build_agent_runtime_prints_tool_debug_platform_skip(temp_dir, monkeypat
     try:
         normalized = normalize_output(console.export_text())
         assert "[TOOL] macos_tools: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] web_tools: registered" in normalized
+        assert "[TOOL] capability_tools: registered" in normalized
         assert "[TOOL] finder_action: skipped: platform is linux, requires darwin" in normalized
         assert "[TOOL] calendar_action: skipped: platform is linux, requires darwin" in normalized
         assert "[TOOL] notes_action: skipped: platform is linux, requires darwin" in normalized
         assert "[TOOL] reminders_action: skipped: platform is linux, requires darwin" in normalized
         assert "[TOOL] messages_action: skipped: platform is linux, requires darwin" in normalized
+        assert "[TOOL] fetch_url: registered" in normalized
+        assert "[TOOL] read_webpage: registered" in normalized
+        assert "[TOOL] extract_page_links: registered" in normalized
+        assert "[TOOL] find_capabilities: registered" in normalized
+        assert "[TOOL] request_capability: registered" in normalized
     finally:
         runtime.agent.logger.close()
         if runtime.mcp_manager:

@@ -130,6 +130,28 @@ def test_process_tool_calls_executes_standard_tools_and_appends_messages(tmp_pat
     assert [event[0] for event in turn_events] == ["tool_call_started", "tool_call_finished"]
 
 
+def test_process_tool_calls_returns_capability_hint_for_unknown_tool(tmp_path):
+    """Unknown tool failures should include a structured capability hint."""
+    context = Context.create(cwd=str(tmp_path))
+    runtime, _, _, _ = create_tool_runtime(context, ToolRegistry())
+    messages: list[dict] = []
+
+    outcome = runtime.process_tool_calls(
+        [{"id": "call-1", "name": "missing_tool", "arguments": json.dumps({})}],
+        messages=messages,
+        turn_id=1,
+        iteration=0,
+        tools_used=[],
+        skills_used=[],
+    )
+
+    payload = json.loads(messages[0]["content"])
+    assert outcome.processed_count == 1
+    assert payload["error"] == "Unknown tool: missing_tool"
+    assert payload["capability_hint"]["kind"] == "tool"
+    assert payload["capability_hint"]["name"] == "missing_tool"
+
+
 def test_process_tool_calls_keeps_submit_plan_as_terminal_control_tool(tmp_path):
     """submit_plan should end the tool batch with a terminal planning report."""
     context = Context.create(cwd=str(tmp_path))

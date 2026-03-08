@@ -16,6 +16,8 @@ from src.server.schemas import (
     DailyMemoryFileResponse,
     DailyMemoryListResponse,
     DailyMemorySummaryResponse,
+    CapabilityRequestListResponse,
+    CapabilityRequestResponse,
     CreateTurnRequest,
     CreateTurnResponse,
     MemoryEntryCreateRequest,
@@ -49,6 +51,13 @@ def _get_database(request: Request) -> SessionDatabase:
 
 def _get_registry(request: Request) -> SessionRegistry:
     return request.app.state.session_registry
+
+
+def _get_runtime(request: Request, session_id: str):
+    runtime = _get_registry(request).get_runtime(session_id)
+    if runtime is None:
+        raise KeyError(f"Unknown runtime for session: {session_id}")
+    return runtime
 
 
 def _get_memory_store(request: Request):
@@ -244,6 +253,99 @@ def get_session_detail(request: Request, session_id: str) -> SessionDetailRespon
             for turn in session_detail.recent_turns
         ],
     )
+
+
+@router.post("/api/v1/sessions/{session_id}/runtime/reload")
+def reload_session_runtime(request: Request, session_id: str) -> dict:
+    """Reload config-backed tools and skills for one idle session runtime."""
+    _require_session(request, session_id)
+    try:
+        runtime = _get_registry(request).ensure_runtime(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    try:
+        runtime._config_loader = request.app.state.runtime_config_loader
+        payload = runtime.reload_capabilities()
+    except SessionBusyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session already has an active turn.",
+        ) from exc
+    except SessionClosedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    request.app.state.runtime_config = runtime.runtime_config
+    request.app.state.session_registry.update_runtime_config(runtime.runtime_config)
+    request.app.state.memory_store.runtime_config = runtime.runtime_config
+    request.app.state.extension_manager = request.app.state.extension_manager.__class__(
+        repo_root=request.app.state.repo_root,
+        runtime_config=runtime.runtime_config,
+    )
+    request.app.state.extension_manager.discover()
+    return payload
+
+
+@router.get(
+    "/api/v1/sessions/{session_id}/capability-requests",
+    response_model=CapabilityRequestListResponse,
+)
+def list_capability_requests(request: Request, session_id: str) -> CapabilityRequestListResponse:
+    """Return runtime-scoped capability requests for one session."""
+    _require_session(request, session_id)
+    try:
+        runtime = _get_registry(request).ensure_runtime(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except SessionClosedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return CapabilityRequestListResponse(
+        session_id=session_id,
+        requests=[CapabilityRequestResponse(**item) for item in runtime.list_capability_requests()],
+    )
+
+
+@router.post(
+    "/api/v1/sessions/{session_id}/capability-requests/{request_id}/dismiss",
+    response_model=CapabilityRequestResponse,
+)
+def dismiss_capability_request(
+    request: Request,
+    session_id: str,
+    request_id: str,
+) -> CapabilityRequestResponse:
+    """Dismiss one pending capability request."""
+    _require_session(request, session_id)
+    try:
+        runtime = _get_registry(request).ensure_runtime(session_id)
+        payload = runtime.dismiss_capability_request(request_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown capability request: {request_id}") from exc
+    except SessionClosedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return CapabilityRequestResponse(**payload)
+
+
+@router.post(
+    "/api/v1/sessions/{session_id}/capability-requests/{request_id}/resolve",
+    response_model=CapabilityRequestResponse,
+)
+def resolve_capability_request(
+    request: Request,
+    session_id: str,
+    request_id: str,
+) -> CapabilityRequestResponse:
+    """Resolve one capability request manually."""
+    _require_session(request, session_id)
+    try:
+        runtime = _get_registry(request).ensure_runtime(session_id)
+        payload = runtime.resolve_capability_request(request_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown capability request: {request_id}") from exc
+    except SessionClosedError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return CapabilityRequestResponse(**payload)
 
 
 @router.delete("/api/v1/sessions/{session_id}", response_model=CloseSessionResponse)
