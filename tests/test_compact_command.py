@@ -1,6 +1,7 @@
 """Tests for the /compact slash command."""
 
 import io
+import json
 from pathlib import Path
 
 from rich.console import Console
@@ -10,6 +11,7 @@ from src.commands import builtin
 from src.commands.registry import CommandRegistry
 from src.config import Config
 from src.context import Context
+from src.memory import SessionMemory
 from src.skills import SkillManager
 from src.tools.skill import LoadSkillTool
 from src.tools import ToolRegistry
@@ -41,19 +43,18 @@ class StubLLM:
     def chat(self, messages, tools=None, log_context=None):
         return {
             "role": "assistant",
-            "content": (
-                "Conversation summary for earlier turns:\n\n"
-                "## Goal\n"
-                "- Keep the session short\n\n"
-                "## Instructions\n"
-                "- none\n\n"
-                "## Discoveries\n"
-                "- none\n\n"
-                "## Accomplished\n"
-                "- Reviewed earlier turns\n\n"
-                "## Relevant files / directories\n"
-                "- none\n\n"
-                "This summary replaces older raw turns. Prefer recent raw turns if they conflict."
+            "content": json.dumps(
+                {
+                    "goal": ["Keep the session short"],
+                    "active_work": ["Review earlier turns"],
+                    "important_decisions_in_effect": ["none"],
+                    "key_discoveries": ["none"],
+                    "completed_work": ["Reviewed earlier turns"],
+                    "working_set_files": ["none"],
+                    "open_loops": ["none"],
+                    "next_steps": ["Continue"],
+                    "risks_or_blockers": ["none"],
+                }
             ),
         }, object()
 
@@ -70,17 +71,20 @@ def add_turns(session_context: Context, count: int, *, size: int = 120) -> None:
         session_context.add_message("assistant", f"assistant {index} " + ("a" * size))
 
 
-def create_compact_env(temp_dir, monkeypatch):
+def create_compact_env(temp_dir, monkeypatch, *, with_memory: bool = False, logging_enabled: bool = False):
     """Build a command environment with compaction support."""
     monkeypatch.setenv("NANO_CODER_TEST", "true")
     cfg = Config.reload()
-    cfg.logging.enabled = False
+    cfg.logging.enabled = logging_enabled
     cfg.logging.async_mode = False
+    cfg.logging.log_dir = str(temp_dir / "sessions")
     cfg.llm.context_window = 400
     cfg.context.auto_compact = True
     cfg.context.auto_compact_threshold = 0.85
     cfg.context.target_usage_after_compaction = 0.60
     cfg.context.min_recent_turns = 2
+    cfg.memory.enabled = with_memory
+    cfg.memory.root_dir = str(temp_dir / "sessions")
 
     repo_root = temp_dir / "repo"
     write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
@@ -90,7 +94,15 @@ def create_compact_env(temp_dir, monkeypatch):
     tools = ToolRegistry()
     tools.register(LoadSkillTool(skill_manager))
     session_context = Context.create(cwd=str(repo_root))
-    agent = Agent(StubLLM(), tools, session_context, skill_manager=skill_manager)
+    memory_store = SessionMemory(repo_root=temp_dir, runtime_config=cfg) if with_memory else None
+    agent = Agent(
+        StubLLM(),
+        tools,
+        session_context,
+        skill_manager=skill_manager,
+        runtime_config=cfg,
+        memory_store=memory_store,
+    )
 
     registry = CommandRegistry()
     builtin.register_all(registry)
@@ -98,6 +110,7 @@ def create_compact_env(temp_dir, monkeypatch):
         "agent": agent,
         "session_context": session_context,
         "skill_manager": skill_manager,
+        "memory_store": memory_store,
     }
     return registry, agent, session_context, command_context
 
@@ -132,7 +145,7 @@ def test_compact_show_displays_summary(temp_dir, monkeypatch):
 
     text = output.getvalue()
     assert "Compacted Summary" in text
-    assert "Conversation summary for earlier turns:" in text
+    assert "Session handoff for earlier turns:" in text
 
 
 def test_compact_now_forces_compaction(temp_dir, monkeypatch):
@@ -220,6 +233,29 @@ def test_compact_now_compacts_small_history_below_configured_retention(temp_dir,
     assert "Context compacted:" in text
     assert session_context.get_summary() is not None
     assert len(session_context.get_complete_turns()) == 1
+
+
+def test_compact_history_displays_recent_snapshots(temp_dir, monkeypatch):
+    """`/compact history` should render recent compaction snapshots from the session ledger."""
+    registry, _agent, session_context, command_context = create_compact_env(
+        temp_dir,
+        monkeypatch,
+        logging_enabled=True,
+    )
+    add_turns(session_context, 5)
+    output = io.StringIO()
+    console = make_console(output)
+
+    registry.execute("/compact now", console, command_context)
+
+    output = io.StringIO()
+    console = make_console(output)
+    registry.execute("/compact history", console, command_context)
+
+    text = output.getvalue()
+    assert "Compaction History" in text
+    assert "manual_command" in text
+    assert "Session handoff for earlier turns:" in text
 
 
 def test_compact_help_renders_full_manual(temp_dir, monkeypatch):

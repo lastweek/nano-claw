@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from threading import RLock
@@ -16,14 +16,19 @@ from src.config import Config, config
 from src.memory.types import (
     CuratedMemoryEntry,
     DailyMemoryEntry,
+    MemoryPromptItem,
     MemoryPromptSelection,
+    MemorySearchPlan,
     MemorySearchHit,
     MemorySettings,
     MemoryWriteCandidate,
+    VALID_MEMORY_MODES,
+    VALID_MEMORY_PROMPT_POLICIES,
+    VALID_MEMORY_READ_POLICIES,
 )
 from src.memory.write_policy import evaluate_autonomous_write, evaluate_manual_write
 from src.session_paths import DEFAULT_SESSIONS_ROOT, resolve_session_dir, resolve_sessions_root
-from src.utils import resolve_path
+from src.utils import env_truthy, resolve_path
 
 DEFAULT_MEMORY_ROOT = DEFAULT_SESSIONS_ROOT
 LEGACY_MEMORY_ROOT = ".nano-claw/memory"
@@ -52,9 +57,7 @@ _VALID_ENTRY_METADATA_KEYS = {
     "status",
     "supersedes",
 }
-_VALID_MEMORY_MODES = {"off", "manual_only", "auto"}
 _VALID_MEMORY_STATUSES = {"active", "archived", "superseded"}
-_AUTO_RETRIEVAL_LIMIT = 3
 
 
 def migrate_legacy_memory_root(memory_root: str | Path, repo_root: Path) -> str | None:
@@ -101,6 +104,10 @@ class SessionMemory:
     def is_enabled(self) -> bool:
         return bool(self.runtime_config.memory.enabled)
 
+    def debug_enabled(self) -> bool:
+        """Return whether verbose memory tracing is enabled."""
+        return env_truthy("MEMORY_DEBUG", default=bool(self.runtime_config.memory.debug))
+
     def session_root(self, session_id: str) -> Path:
         session = self._lookup_session(session_id)
         title = getattr(session, "title", None) if session is not None else None
@@ -141,22 +148,67 @@ class SessionMemory:
 
     def get_settings(self, session_id: str) -> MemorySettings:
         path = self.settings_path(session_id)
+        default_settings = MemorySettings(
+            mode="manual_only",
+            read_policy=self.runtime_config.memory.default_read_policy,
+            prompt_policy=self.runtime_config.memory.default_prompt_policy,
+        )
         if not path.exists():
-            return MemorySettings()
+            return default_settings
         payload = json.loads(path.read_text(encoding="utf-8"))
-        mode = str(payload.get("mode", "manual_only")).strip().lower()
-        if mode not in _VALID_MEMORY_MODES:
+        mode = str(payload.get("mode", default_settings.mode)).strip().lower()
+        if mode not in VALID_MEMORY_MODES:
             raise ValueError(f"Unsupported memory mode in {path}: {mode}")
-        return MemorySettings(mode=mode)
+        read_policy_name = str(payload.get("read_policy", default_settings.read_policy)).strip()
+        if read_policy_name not in VALID_MEMORY_READ_POLICIES:
+            raise ValueError(f"Unsupported memory read_policy in {path}: {read_policy_name}")
+        prompt_policy_name = str(payload.get("prompt_policy", default_settings.prompt_policy)).strip()
+        if prompt_policy_name not in VALID_MEMORY_PROMPT_POLICIES:
+            raise ValueError(f"Unsupported memory prompt_policy in {path}: {prompt_policy_name}")
+        return MemorySettings(
+            mode=mode,
+            read_policy=read_policy_name,
+            prompt_policy=prompt_policy_name,
+        )
 
-    def update_settings(self, session_id: str, *, mode: str) -> MemorySettings:
-        normalized_mode = str(mode or "").strip().lower()
-        if normalized_mode not in _VALID_MEMORY_MODES:
+    def update_settings(
+        self,
+        session_id: str,
+        *,
+        mode: str | None = None,
+        read_policy: str | None = None,
+        prompt_policy: str | None = None,
+    ) -> MemorySettings:
+        current_settings = self.get_settings(session_id)
+        if mode is None and read_policy is None and prompt_policy is None:
+            raise ValueError("at least one setting must be updated")
+
+        normalized_mode = current_settings.mode if mode is None else str(mode or "").strip().lower()
+        if normalized_mode not in VALID_MEMORY_MODES:
             raise ValueError("mode must be one of: off, manual_only, auto")
-        settings = MemorySettings(mode=normalized_mode)
+        normalized_read_policy = current_settings.read_policy if read_policy is None else str(read_policy or "").strip()
+        if normalized_read_policy not in VALID_MEMORY_READ_POLICIES:
+            raise ValueError(
+                "read_policy must be one of: curated_only, curated_plus_recent_daily, search_all_ranked"
+            )
+        normalized_prompt_policy = (
+            current_settings.prompt_policy if prompt_policy is None else str(prompt_policy or "").strip()
+        )
+        if normalized_prompt_policy not in VALID_MEMORY_PROMPT_POLICIES:
+            raise ValueError(
+                "prompt_policy must be one of: curated_only, curated_plus_recent_daily, search_all_ranked"
+            )
+
+        settings = MemorySettings(
+            mode=normalized_mode,
+            read_policy=normalized_read_policy,
+            prompt_policy=normalized_prompt_policy,
+        )
         path = self.settings_path(session_id)
         payload = {
             "mode": settings.mode,
+            "read_policy": settings.read_policy,
+            "prompt_policy": settings.prompt_policy,
             "updated_at": self._now_iso(),
         }
         with self._lock:
@@ -166,6 +218,8 @@ class SessionMemory:
             session_id,
             "settings_updated",
             mode=settings.mode,
+            read_policy=settings.read_policy,
+            prompt_policy=settings.prompt_policy,
         )
         return settings
 
@@ -289,6 +343,8 @@ class SessionMemory:
         confidence: float | None = None,
         last_verified_at: str | None = None,
         actor: str = "manual",
+        logger=None,
+        turn_id: int | str | None = None,
     ) -> CuratedMemoryEntry:
         normalized_kind = self._normalize_kind(kind)
         normalized_title = title.strip()
@@ -308,7 +364,32 @@ class SessionMemory:
             confidence=confidence,
             last_verified_at=last_verified_at,
         )
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_requested",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="upsert_curated",
+            kind=normalized_kind,
+            title=normalized_title,
+            reason=reason,
+            source=source,
+            confidence=confidence,
+        )
         decision = self._evaluate_write_candidate(session_id, candidate, actor=actor)
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_policy_decision",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="upsert_curated",
+            kind=normalized_kind,
+            title=normalized_title,
+            accepted=decision.accepted,
+            decision_reason=decision.reason,
+        )
         if not decision.accepted:
             self._append_audit_event(
                 session_id,
@@ -380,6 +461,18 @@ class SessionMemory:
             source=source,
             confidence=updated_entry.confidence,
         )
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_applied",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="upsert_curated",
+            outcome=outcome,
+            entry_id=updated_entry.entry_id,
+            kind=updated_entry.kind,
+            title=updated_entry.title,
+        )
         return updated_entry
 
     def update_curated_entry(
@@ -394,6 +487,8 @@ class SessionMemory:
         last_verified_at: str | None = None,
         reason: str,
         actor: str = "manual",
+        logger=None,
+        turn_id: int | str | None = None,
     ) -> CuratedMemoryEntry:
         self._assert_write_allowed(session_id, actor=actor)
         entries = self._load_entries(session_id)
@@ -413,7 +508,34 @@ class SessionMemory:
                 confidence=confidence if confidence is not None else entry.confidence,
                 last_verified_at=last_verified_at if last_verified_at is not None else entry.last_verified_at,
             )
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_requested",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="update_curated",
+                entry_id=entry_id,
+                kind=entry.kind,
+                title=next_title,
+                reason=reason,
+                source=candidate.source,
+                confidence=candidate.confidence,
+            )
             decision = self._evaluate_write_candidate(session_id, candidate, actor=actor)
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_policy_decision",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="update_curated",
+                entry_id=entry_id,
+                kind=entry.kind,
+                title=next_title,
+                accepted=decision.accepted,
+                decision_reason=decision.reason,
+            )
             if not decision.accepted:
                 self._append_audit_event(
                     session_id,
@@ -449,15 +571,48 @@ class SessionMemory:
                 entry_id=updated.entry_id,
                 reason=reason,
             )
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_applied",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="update_curated",
+                outcome="updated",
+                entry_id=updated.entry_id,
+                kind=updated.kind,
+                title=updated.title,
+            )
             return updated
         raise FileNotFoundError(f"Unknown memory entry: {entry_id}")
 
-    def archive_curated_entry(self, session_id: str, entry_id: str, *, reason: str, actor: str = "manual") -> CuratedMemoryEntry:
+    def archive_curated_entry(
+        self,
+        session_id: str,
+        entry_id: str,
+        *,
+        reason: str,
+        actor: str = "manual",
+        logger=None,
+        turn_id: int | str | None = None,
+    ) -> CuratedMemoryEntry:
         self._assert_write_allowed(session_id, actor=actor)
         entries = self._load_entries(session_id)
         for index, entry in enumerate(entries):
             if entry.entry_id != entry_id:
                 continue
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_requested",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="archive_curated",
+                entry_id=entry_id,
+                kind=entry.kind,
+                title=entry.title,
+                reason=reason,
+            )
             archived = CuratedMemoryEntry(
                 **{
                     **asdict(entry),
@@ -476,6 +631,18 @@ class SessionMemory:
                 entry_id=archived.entry_id,
                 reason=reason,
             )
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_applied",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="archive_curated",
+                outcome="archived",
+                entry_id=archived.entry_id,
+                kind=archived.kind,
+                title=archived.title,
+            )
             return archived
         raise FileNotFoundError(f"Unknown memory entry: {entry_id}")
 
@@ -491,6 +658,8 @@ class SessionMemory:
         confidence: float | None = None,
         last_verified_at: str | None = None,
         actor: str = "manual",
+        logger=None,
+        turn_id: int | str | None = None,
     ) -> CuratedMemoryEntry:
         self._assert_write_allowed(session_id, actor=actor)
         entries = self._load_entries(session_id)
@@ -510,7 +679,34 @@ class SessionMemory:
                 confidence=confidence,
                 last_verified_at=last_verified_at,
             )
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_requested",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="supersede_curated",
+                entry_id=entry_id,
+                kind=entry.kind,
+                title=next_title,
+                reason=reason,
+                source=source,
+                confidence=confidence,
+            )
             decision = self._evaluate_write_candidate(session_id, candidate, actor=actor)
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_policy_decision",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="supersede_curated",
+                entry_id=entry_id,
+                kind=entry.kind,
+                title=next_title,
+                accepted=decision.accepted,
+                decision_reason=decision.reason,
+            )
             if not decision.accepted:
                 self._append_audit_event(
                     session_id,
@@ -557,6 +753,19 @@ class SessionMemory:
                 replacement_entry_id=replacement.entry_id,
                 reason=reason,
             )
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_applied",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                action="supersede_curated",
+                outcome="superseded",
+                entry_id=entry.entry_id,
+                replacement_entry_id=replacement.entry_id,
+                kind=replacement.kind,
+                title=replacement.title,
+            )
             return replacement
         raise FileNotFoundError(f"Unknown memory entry: {entry_id}")
 
@@ -569,6 +778,8 @@ class SessionMemory:
         title: str | None = None,
         reason: str = "manual delete",
         actor: str = "manual",
+        logger=None,
+        turn_id: int | str | None = None,
     ) -> Path:
         self._assert_write_allowed(session_id, actor=actor)
         entries = self._load_entries(session_id)
@@ -593,6 +804,18 @@ class SessionMemory:
         next_entries = [entry for entry in entries if entry.entry_id != target_id]
         if len(next_entries) == len(entries):
             raise FileNotFoundError(f"Unknown memory entry: {target_id}")
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_requested",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="delete_curated",
+            entry_id=target_id,
+            kind=kind,
+            title=title,
+            reason=reason,
+        )
         path = self._write_entries(session_id, next_entries)
         self._append_audit_event(
             session_id,
@@ -603,16 +826,45 @@ class SessionMemory:
             entry_id=target_id,
             reason=reason,
         )
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_applied",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="delete_curated",
+            outcome="deleted",
+            entry_id=target_id,
+            kind=kind,
+            title=title,
+        )
         return path
 
     def list_daily_logs(self, session_id: str) -> list[str]:
+        return self._list_daily_logs(session_id, recent_daily_days=None)
+
+    def _list_daily_logs(self, session_id: str, *, recent_daily_days: int | None) -> list[str]:
         daily_root = self.daily_root(session_id)
         if not daily_root.exists():
             return []
-        return sorted(
+        dates = sorted(
             [path.stem for path in daily_root.glob("*.md") if path.is_file()],
             reverse=True,
         )
+        if recent_daily_days is None:
+            return dates
+
+        today = datetime.now().date()
+        cutoff = today - timedelta(days=max(recent_daily_days - 1, 0))
+        recent_dates: list[str] = []
+        for value in dates:
+            try:
+                parsed = datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            if parsed >= cutoff:
+                recent_dates.append(value)
+        return recent_dates
 
     def read_daily_log(self, session_id: str, date: str) -> str:
         path = self.daily_log_path(session_id, date)
@@ -630,6 +882,8 @@ class SessionMemory:
         reason: str = "manual daily append",
         source: str = "manual",
         actor: str = "manual",
+        logger=None,
+        turn_id: int | str | None = None,
     ) -> Path:
         normalized_title = title.strip()
         normalized_content = content.strip()
@@ -646,7 +900,30 @@ class SessionMemory:
             source=source,
             confidence=1.0,
         )
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_requested",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="append_daily",
+            title=normalized_title,
+            reason=reason,
+            source=source,
+            date=date,
+        )
         decision = self._evaluate_write_candidate(session_id, candidate, actor=actor)
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_policy_decision",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="append_daily",
+            title=normalized_title,
+            accepted=decision.accepted,
+            decision_reason=decision.reason,
+        )
         if not decision.accepted:
             self._append_audit_event(
                 session_id,
@@ -681,6 +958,17 @@ class SessionMemory:
             title=normalized_title,
             reason=reason,
         )
+        self._emit_memory_debug(
+            session_id,
+            "debug_write_applied",
+            logger=logger,
+            turn_id=turn_id,
+            actor=actor,
+            action="append_daily",
+            outcome="appended",
+            title=normalized_title,
+            date=resolved_date,
+        )
         return path
 
     def search(
@@ -691,7 +979,11 @@ class SessionMemory:
         limit: int | None = None,
         include_daily: bool = True,
         include_inactive: bool = False,
+        recent_daily_days: int | None = None,
         actor: str | None = None,
+        policy_name: str | None = None,
+        logger=None,
+        turn_id: int | str | None = None,
     ) -> list[MemorySearchHit]:
         normalized_query = self._normalize_query(query)
         configured_limit = self.runtime_config.memory.max_search_results
@@ -724,7 +1016,7 @@ class SessionMemory:
             )
 
         if include_daily:
-            for date in self.list_daily_logs(session_id):
+            for date in self._list_daily_logs(session_id, recent_daily_days=recent_daily_days):
                 daily_path = self.daily_log_path(session_id, date)
                 daily_text = daily_path.read_text(encoding="utf-8")
                 for entry in self._parse_daily_entries(
@@ -757,13 +1049,30 @@ class SessionMemory:
             ),
         )[:max_results]
         if actor is not None:
+            self._emit_memory_debug(
+                session_id,
+                "debug_search_completed",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                policy_name=policy_name,
+                query=query,
+                include_daily=include_daily,
+                include_inactive=include_inactive,
+                recent_daily_days=recent_daily_days,
+                hit_count=len(ordered_hits),
+                hit_titles=[hit.title for hit in ordered_hits],
+            )
+        if actor is not None:
             self._append_audit_event(
                 session_id,
                 "search",
                 actor=actor,
                 query=query,
+                policy_name=policy_name,
                 include_daily=include_daily,
                 include_inactive=include_inactive,
+                recent_daily_days=recent_daily_days,
                 hit_entry_ids=[hit.entry_id for hit in ordered_hits if hit.entry_id],
                 hit_titles=[hit.title for hit in ordered_hits],
             )
@@ -775,40 +1084,60 @@ class SessionMemory:
         settings = self.get_settings(session_id)
         if not settings.auto_retrieve_enabled:
             return None
+        from src.memory import prompt_policy
 
-        selected_entries = self._select_prompt_entries(session_id, query, limit=_AUTO_RETRIEVAL_LIMIT)
-        if not selected_entries:
-            return None
+        return prompt_policy.build_prompt_selection(self, session_id, query)
 
-        max_chars = max(1, self.runtime_config.memory.max_auto_chars)
-        lines = ["Session memory:"]
-        included_entries: list[CuratedMemoryEntry] = []
+    def search_with_policy(
+        self,
+        session_id: str,
+        *,
+        query: str,
+        limit: int | None = None,
+        include_daily: bool | None = None,
+        include_inactive: bool | None = None,
+        actor: str | None = None,
+        logger=None,
+        turn_id: int | str | None = None,
+    ) -> tuple[MemorySearchPlan, list[MemorySearchHit]]:
+        """Search memory using the current session read policy for omitted arguments."""
+        from src.memory import read_policy
 
-        for entry in selected_entries:
-            label = f"- [{entry.kind}] {entry.title}"
-            details: list[str] = []
-            if entry.updated_at:
-                details.append(f"updated {entry.updated_at[:10]}")
-            if entry.confidence is not None:
-                details.append(f"confidence {entry.confidence:.2f}")
-            if entry.last_verified_at:
-                details.append(f"verified {entry.last_verified_at[:10]}")
-            if details:
-                label += f" ({', '.join(details)})"
-            candidate_lines = [label, f"  {self._compact_text(entry.content, limit=220)}"]
-            candidate_note = "\n".join(lines + [""] + candidate_lines)
-            if len(candidate_note) > max_chars:
-                break
-            lines.extend([""] + candidate_lines)
-            included_entries.append(entry)
-
-        if not included_entries:
-            return None
-
-        note = "\n".join(lines)
-        if len(note) > max_chars:
-            note = note[: max_chars - 1].rstrip() + "…"
-        return MemoryPromptSelection(note=note, entries=included_entries)
+        plan = read_policy.build_search_plan(
+            self,
+            session_id,
+            query=query,
+            limit=limit,
+            include_daily=include_daily,
+            include_inactive=include_inactive,
+        )
+        if actor is not None:
+            self._emit_memory_debug(
+                session_id,
+                "debug_search_plan",
+                logger=logger,
+                turn_id=turn_id,
+                actor=actor,
+                policy_name=plan.policy_name,
+                query=plan.query,
+                limit=plan.limit,
+                include_daily=plan.include_daily,
+                include_inactive=plan.include_inactive,
+                recent_daily_days=plan.recent_daily_days,
+            )
+        hits = self.search(
+            session_id,
+            query=plan.query,
+            limit=plan.limit,
+            include_daily=plan.include_daily,
+            include_inactive=plan.include_inactive,
+            recent_daily_days=plan.recent_daily_days,
+            actor=actor,
+            policy_name=plan.policy_name,
+            logger=logger,
+            turn_id=turn_id,
+        )
+        return plan, hits
 
     def writeback_from_turn(
         self,
@@ -817,18 +1146,58 @@ class SessionMemory:
         turn_id: int,
         user_message: str,
         assistant_message: str,
+        logger=None,
     ) -> list[CuratedMemoryEntry]:
         settings = self.get_settings(session_id)
         if settings.mode != "auto":
+            self._emit_memory_debug(
+                session_id,
+                "debug_writeback_skipped",
+                logger=logger,
+                turn_id=turn_id,
+                reason="session memory mode does not allow autonomous writeback",
+            )
             return []
 
         candidates = self._extract_auto_candidates(user_message, assistant_message)
         if not candidates:
+            self._emit_memory_debug(
+                session_id,
+                "debug_writeback_skipped",
+                logger=logger,
+                turn_id=turn_id,
+                reason="no automatic memory candidates extracted",
+            )
             return []
 
         saved_entries: list[CuratedMemoryEntry] = []
         for candidate in candidates:
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_requested",
+                logger=logger,
+                turn_id=turn_id,
+                actor="auto",
+                action="writeback_from_turn",
+                kind=candidate.kind,
+                title=candidate.title,
+                reason=candidate.reason,
+                source=candidate.source,
+                confidence=candidate.confidence,
+            )
             decision = evaluate_autonomous_write(candidate, settings)
+            self._emit_memory_debug(
+                session_id,
+                "debug_write_policy_decision",
+                logger=logger,
+                turn_id=turn_id,
+                actor="auto",
+                action="writeback_from_turn",
+                kind=candidate.kind,
+                title=candidate.title,
+                accepted=decision.accepted,
+                decision_reason=decision.reason,
+            )
             if not decision.accepted:
                 self._append_audit_event(
                     session_id,
@@ -851,6 +1220,8 @@ class SessionMemory:
                     confidence=candidate.confidence,
                     last_verified_at=candidate.last_verified_at,
                     actor="auto",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
             except ValueError as exc:
                 self._append_audit_event(
@@ -872,6 +1243,14 @@ class SessionMemory:
                 turn_id=turn_id,
                 entry_ids=[entry.entry_id for entry in saved_entries],
             )
+            self._emit_memory_debug(
+                session_id,
+                "debug_writeback_completed",
+                logger=logger,
+                turn_id=turn_id,
+                entry_ids=[entry.entry_id for entry in saved_entries],
+                entry_titles=[entry.title for entry in saved_entries],
+            )
         return saved_entries
 
     def record_prompt_injection(
@@ -880,23 +1259,48 @@ class SessionMemory:
         *,
         turn_id: int,
         query: str,
-        entry_ids: list[str],
+        items: list[MemoryPromptItem],
+        policy_name: str,
+        logger=None,
     ) -> None:
-        if not entry_ids:
+        if not items:
             return
-        entries = [
-            entry
-            for entry in self._load_entries(session_id)
-            if entry.entry_id in set(entry_ids)
-        ]
         self._append_audit_event(
             session_id,
             "prompt_injection",
             turn_id=turn_id,
             query=query,
-            entry_ids=[entry.entry_id for entry in entries],
-            entry_titles=[entry.title for entry in entries],
+            prompt_policy=policy_name,
+            item_scopes=[item.scope for item in items],
+            entry_ids=[item.entry_id for item in items if item.entry_id],
+            entry_titles=[item.title for item in items],
+            daily_dates=[item.date for item in items if item.scope == "daily" and item.date],
+            daily_paths=[item.path for item in items if item.scope == "daily"],
         )
+        self._emit_memory_debug(
+            session_id,
+            "debug_prompt_policy_selection",
+            logger=logger,
+            turn_id=turn_id,
+            prompt_policy=policy_name,
+            query=query,
+            item_count=len(items),
+            item_scopes=[item.scope for item in items],
+            item_titles=[item.title for item in items],
+        )
+        for item in items:
+            self._emit_memory_debug(
+                session_id,
+                "debug_prompt_item_selected",
+                logger=logger,
+                turn_id=turn_id,
+                prompt_policy=policy_name,
+                scope=item.scope,
+                title=item.title,
+                entry_id=item.entry_id,
+                date=item.date,
+                score=item.score,
+            )
 
     def read_audit_log(self, session_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
         path = self.audit_path(session_id)
@@ -934,6 +1338,7 @@ class SessionMemory:
             "status_counts": status_counts,
             "daily_files": self.list_daily_logs(session_id),
             "settings": asdict(settings),
+            "debug_enabled": self.debug_enabled(),
         }
 
     def daily_log_path(self, session_id: str, date: str) -> Path:
@@ -1035,6 +1440,91 @@ class SessionMemory:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
+
+    def _emit_memory_debug(
+        self,
+        session_id: str,
+        event: str,
+        *,
+        logger=None,
+        turn_id: int | str | None = None,
+        **fields: Any,
+    ) -> None:
+        """Emit one debug-only memory event to audit, session log, and stdout."""
+        if not self.debug_enabled():
+            return
+
+        payload = {
+            "turn_id": turn_id,
+            **fields,
+        }
+        self._append_audit_event(session_id, event, **payload)
+
+        numeric_turn_id = turn_id if isinstance(turn_id, int) else None
+        if logger is not None and hasattr(logger, "log_memory_event"):
+            try:
+                logger.log_memory_event(
+                    turn_id=numeric_turn_id,
+                    stage=event.replace("debug_", ""),
+                    **payload,
+                )
+            except Exception:
+                pass
+
+        print(self._format_debug_line(event, payload))
+
+    @staticmethod
+    def _format_debug_line(event: str, payload: dict[str, Any]) -> str:
+        """Render one concise terminal debug line for memory internals."""
+        fields: list[str] = []
+        query = payload.get("query")
+        if query:
+            fields.append(f'query="{query}"')
+        action = payload.get("action")
+        if action:
+            fields.append(f"action={action}")
+        policy_name = payload.get("policy_name") or payload.get("prompt_policy")
+        if policy_name:
+            fields.append(f"policy={policy_name}")
+        compaction_reason = payload.get("compaction_reason")
+        if compaction_reason:
+            fields.append(f"compaction_reason={compaction_reason}")
+        source = payload.get("source")
+        if source:
+            fields.append(f"source={source}")
+        scope = payload.get("scope")
+        if scope:
+            fields.append(f"scope={scope}")
+        title = payload.get("title")
+        if title:
+            fields.append(f'title="{title}"')
+        reason = payload.get("reason") or payload.get("decision_reason")
+        if reason:
+            fields.append(f'reason="{reason}"')
+        if payload.get("covered_turn_count") is not None:
+            fields.append(f"covered_turns={payload['covered_turn_count']}")
+        if payload.get("accepted") is not None:
+            fields.append(f"accepted={'yes' if payload['accepted'] else 'no'}")
+        if payload.get("include_daily") is not None:
+            fields.append(f"include_daily={'yes' if payload['include_daily'] else 'no'}")
+        if payload.get("recent_daily_days") is not None:
+            fields.append(f"recent_daily_days={payload['recent_daily_days']}")
+        if payload.get("candidate_count") is not None:
+            fields.append(f"candidates={payload['candidate_count']}")
+        if payload.get("hit_count") is not None:
+            fields.append(f"hits={payload['hit_count']}")
+        if payload.get("item_count") is not None:
+            fields.append(f"items={payload['item_count']}")
+        if payload.get("entry_id"):
+            fields.append(f"entry_id={payload['entry_id']}")
+        if payload.get("replacement_entry_id"):
+            fields.append(f"replacement_entry_id={payload['replacement_entry_id']}")
+        if payload.get("journal_date"):
+            fields.append(f"journal_date={payload['journal_date']}")
+        if payload.get("error"):
+            fields.append(f'error="{payload["error"]}"')
+        suffix = " ".join(fields)
+        return f"[MEMORY] {event}{(' ' + suffix) if suffix else ''}"
 
     @staticmethod
     def _normalize_kind(kind: str) -> str:

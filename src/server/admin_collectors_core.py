@@ -232,6 +232,7 @@ def collect_memory_workspace(app: FastAPI, session_id: str) -> dict[str, Any] | 
         status={
             "phase": "Ready",
             "mode": workspace["settings"]["mode"],
+            "debug_enabled": bool(workspace.get("debug_enabled")),
             "entry_count": workspace["entry_count"],
             "section_counts": workspace["section_counts"],
             "status_counts": workspace["status_counts"],
@@ -380,9 +381,12 @@ def collect_memory_settings(app: FastAPI, session_id: str) -> dict[str, Any] | N
         status={
             "phase": "Ready",
             "mode": settings.mode,
+            "read_policy": settings.read_policy,
+            "prompt_policy": settings.prompt_policy,
             "auto_retrieve_enabled": settings.auto_retrieve_enabled,
             "manual_write_enabled": settings.manual_write_enabled,
             "autonomous_write_enabled": settings.autonomous_write_enabled,
+            "debug_enabled": memory_store.debug_enabled(),
         },
         metadata_extra={"sessionId": session_id},
     )

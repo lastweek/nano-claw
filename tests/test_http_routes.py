@@ -190,6 +190,9 @@ def test_memory_routes_expose_file_backed_session_memory(temp_dir, http_runtime_
         assert workspace.json()["daily_files"] == []
         assert workspace.json()["entry_count"] == 0
         assert workspace.json()["settings_mode"] == "manual_only"
+        assert workspace.json()["settings_read_policy"] == "curated_plus_recent_daily"
+        assert workspace.json()["settings_prompt_policy"] == "curated_plus_recent_daily"
+        assert workspace.json()["debug_enabled"] is False
 
         document = client.get(f"/api/v1/sessions/{session['id']}/memory/document")
         assert document.status_code == 200
@@ -198,13 +201,22 @@ def test_memory_routes_expose_file_backed_session_memory(temp_dir, http_runtime_
         settings = client.get(f"/api/v1/sessions/{session['id']}/memory/settings")
         assert settings.status_code == 200
         assert settings.json()["mode"] == "manual_only"
+        assert settings.json()["read_policy"] == "curated_plus_recent_daily"
+        assert settings.json()["prompt_policy"] == "curated_plus_recent_daily"
+        assert settings.json()["debug_enabled"] is False
 
         settings_patch = client.patch(
             f"/api/v1/sessions/{session['id']}/memory/settings",
-            json={"mode": "auto"},
+            json={
+                "mode": "auto",
+                "read_policy": "curated_only",
+                "prompt_policy": "search_all_ranked",
+            },
         )
         assert settings_patch.status_code == 200
         assert settings_patch.json()["mode"] == "auto"
+        assert settings_patch.json()["read_policy"] == "curated_only"
+        assert settings_patch.json()["prompt_policy"] == "search_all_ranked"
 
         created_entry = client.post(
             f"/api/v1/sessions/{session['id']}/memory/entries",

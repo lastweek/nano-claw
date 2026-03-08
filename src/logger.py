@@ -131,6 +131,7 @@ class SessionLogger:
         self._session_json_path: Optional[Path] = None
         self._llm_log_path: Optional[Path] = None
         self._events_path: Optional[Path] = None
+        self._compaction_history_path: Optional[Path] = None
         self._initialized = False
         self._closed = False
 
@@ -272,6 +273,19 @@ class SessionLogger:
             return
 
         self._submit_write(self._record_context_compaction_event, turn_id, stage, details)
+
+    def log_memory_event(
+        self,
+        *,
+        turn_id: Optional[int],
+        stage: str,
+        **details: Any,
+    ) -> None:
+        """Log a memory lifecycle or debug event to both session outputs."""
+        if not self.enabled:
+            return
+
+        self._submit_write(self._record_memory_event, turn_id, stage, details)
 
     def log_subagent_event(
         self,
@@ -478,6 +492,7 @@ class SessionLogger:
         self._session_json_path = self.session_dir / "session.json"
         self._llm_log_path = self.session_dir / "llm.log"
         self._events_path = self.session_dir / "events.jsonl"
+        self._compaction_history_path = self.session_dir / "compaction-history.jsonl"
 
         if self.update_latest_symlinks:
             self._update_symlink(self.log_dir / "latest-session", self.session_dir)
@@ -526,6 +541,12 @@ class SessionLogger:
             tool_call_count=self._tool_call_count,
             tools_used=list(self._session_tools_used),
         )
+
+    def get_compaction_history_path(self) -> Path:
+        """Return the compaction-history.jsonl path, creating the session directory if needed."""
+        self._ensure_initialized()
+        assert self._compaction_history_path is not None
+        return self._compaction_history_path
 
     def _update_symlink(self, link_path: Path, target: Path) -> None:
         """Create or refresh a symlink when supported."""
@@ -584,6 +605,7 @@ class SessionLogger:
             "error_count": self._error_count,
             "llm_log": "llm.log",
             "events_log": "events.jsonl",
+            "compaction_history": "compaction-history.jsonl",
             "artifacts_dir": "artifacts",
         }
 
@@ -845,6 +867,80 @@ class SessionLogger:
             timestamp=timestamp,
             sections=self._append_json_block("DETAILS", details),
         )
+
+    def record_compaction_snapshot(
+        self,
+        *,
+        timestamp: str,
+        compaction_count: int,
+        reason: str,
+        covered_turn_count: int,
+        covered_message_count: int,
+        retained_turn_count: int,
+        before_tokens: int,
+        after_tokens: int,
+        used_fallback: bool,
+        rendered_text: str,
+        payload: Dict[str, Any] | None,
+    ) -> None:
+        """Append one successful compaction snapshot to compaction-history.jsonl."""
+        if not self.enabled:
+            return
+
+        self._submit_write(
+            self._record_compaction_snapshot,
+            {
+                "timestamp": timestamp,
+                "compaction_count": compaction_count,
+                "reason": reason,
+                "covered_turn_count": covered_turn_count,
+                "covered_message_count": covered_message_count,
+                "retained_turn_count": retained_turn_count,
+                "before_tokens": before_tokens,
+                "after_tokens": after_tokens,
+                "used_fallback": used_fallback,
+                "rendered_text": rendered_text,
+                "payload": payload,
+            },
+        )
+
+    def _record_memory_event(
+        self,
+        turn_id: Optional[int],
+        stage: str,
+        details: Dict[str, Any],
+    ) -> None:
+        """Write a memory lifecycle or debug block and structured event."""
+        self._ensure_initialized()
+        timestamp = datetime.now().isoformat()
+        timeline_seq = self._next_timeline_seq()
+        event_kind = f"memory_{stage}"
+        self._append_event(
+            event_kind,
+            timeline_seq,
+            turn_id=turn_id,
+            **details,
+        )
+
+        stage_label = f"MEMORY {stage.replace('_', ' ').upper()}"
+        if turn_id is None:
+            header = f"STEP {timeline_seq:04d} | {stage_label}"
+        else:
+            header = f"STEP {timeline_seq:04d} | TURN {turn_id:04d} | {stage_label}"
+        self._write_timeline_block(
+            rule=SECTION_RULE,
+            header=header,
+            timestamp=timestamp,
+            sections=self._append_json_block("DETAILS", details),
+        )
+
+    def _record_compaction_snapshot(self, payload: Dict[str, Any]) -> None:
+        """Append one structured compaction snapshot record."""
+        self._ensure_initialized()
+        assert self._compaction_history_path is not None
+        with self._lock:
+            with self._compaction_history_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False, default=str) + "\n")
 
     def _record_subagent_event(
         self,

@@ -388,6 +388,38 @@ class TestSessionLogger:
         assert "CONTEXT COMPACTION SKIPPED" in llm_log
         assert "\"reason\": \"not_enough_complete_turns\"" in llm_log
 
+    def test_records_compaction_history_snapshot(self, temp_dir):
+        """Successful compactions should append structured snapshots to compaction-history.jsonl."""
+        logger = self._build_logger(temp_dir)
+
+        logger.record_compaction_snapshot(
+            timestamp="2026-03-08T12:00:00",
+            compaction_count=2,
+            reason="manual_command",
+            covered_turn_count=4,
+            covered_message_count=8,
+            retained_turn_count=2,
+            before_tokens=1800,
+            after_tokens=900,
+            used_fallback=False,
+            rendered_text="Session handoff for earlier turns:\n- Keep going",
+            payload={"goal": ["Keep going"]},
+        )
+        logger.close()
+
+        session_dir = _top_level_session_dir(temp_dir)
+        history_path = session_dir / "compaction-history.jsonl"
+        entries = [
+            json.loads(line)
+            for line in history_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+        assert len(entries) == 1
+        assert entries[0]["compaction_count"] == 2
+        assert entries[0]["reason"] == "manual_command"
+        assert entries[0]["payload"]["goal"] == ["Keep going"]
+
     def test_child_session_does_not_update_latest_symlinks_and_records_subagent_events(self, temp_dir):
         """Child sessions should nest under the parent and keep latest-session pointing at the parent."""
         parent_logger = self._build_logger(temp_dir)

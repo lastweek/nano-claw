@@ -51,7 +51,8 @@ class TurnActivityEvent:
     - `context_compaction_started`: `reason`, `covered_turn_count`,
       `retained_turn_count`
     - `context_compaction_completed`: `reason`, `covered_turn_count`,
-      `retained_turn_count`, `before_tokens`, `after_tokens`
+      `retained_turn_count`, `before_tokens`, `after_tokens`,
+      optional `used_fallback`
     - `context_compaction_failed`: `reason`, `error`
     - `skill_preload`: `skill_name`, `reason`, `source`, `catalog_visible`
     - `skill_normalized`: `content`, `reason`

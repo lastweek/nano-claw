@@ -45,6 +45,11 @@ def make_runtime_config(temp_dir: Path, **overrides):
             "auto_load_memory": True,
             "max_auto_chars": 4000,
             "max_search_results": 10,
+            "default_read_policy": "curated_plus_recent_daily",
+            "default_prompt_policy": "curated_plus_recent_daily",
+            "recent_daily_days": 2,
+            "max_auto_curated_hits": 3,
+            "max_auto_daily_hits": 2,
         },
         "mcp": {"servers": []},
         "subagents": {

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from src.memory import MemoryPromptItem
 from src.message_types import ChatMessage
 
 
@@ -24,7 +25,8 @@ class PreparedTurnInput:
     preload_skill_names: list[str]
     pending_skill_events: list[PendingSkillEvent]
     memory_note: str | None = None
-    memory_entry_ids: list[str] | None = None
+    memory_prompt_items: list[MemoryPromptItem] | None = None
+    memory_prompt_policy: str | None = None
 
 
 def prepare_turn_input(
@@ -40,7 +42,8 @@ def prepare_turn_input(
     normalized_user_message = user_message
     preload_skill_names: list[str] = []
     memory_note: str | None = None
-    memory_entry_ids: list[str] | None = None
+    memory_prompt_items: list[MemoryPromptItem] | None = None
+    memory_prompt_policy: str | None = None
 
     if skill_manager is None:
         if memory_store is not None and runtime_config is not None:
@@ -50,13 +53,15 @@ def prepare_turn_input(
             )
             if selection is not None:
                 memory_note = selection.note
-                memory_entry_ids = [entry.entry_id for entry in selection.entries]
+                memory_prompt_items = selection.items
+                memory_prompt_policy = selection.policy_name
         return PreparedTurnInput(
             normalized_user_message=normalized_user_message,
             preload_skill_names=preload_skill_names,
             pending_skill_events=pending_skill_events,
             memory_note=memory_note,
-            memory_entry_ids=memory_entry_ids,
+            memory_prompt_items=memory_prompt_items,
+            memory_prompt_policy=memory_prompt_policy,
         )
 
     pinned_skill_names = [
@@ -127,14 +132,16 @@ def prepare_turn_input(
         )
         if selection is not None:
             memory_note = selection.note
-            memory_entry_ids = [entry.entry_id for entry in selection.entries]
+            memory_prompt_items = selection.items
+            memory_prompt_policy = selection.policy_name
 
     return PreparedTurnInput(
         normalized_user_message=normalized_user_message,
         preload_skill_names=preload_skill_names,
         pending_skill_events=pending_skill_events,
         memory_note=memory_note,
-        memory_entry_ids=memory_entry_ids,
+        memory_prompt_items=memory_prompt_items,
+        memory_prompt_policy=memory_prompt_policy,
     )
 
 

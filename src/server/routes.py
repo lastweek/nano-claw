@@ -136,9 +136,12 @@ def _serialize_memory_settings(session_id: str, memory_store) -> MemorySettingsR
     return MemorySettingsResponse(
         session_id=session_id,
         mode=settings.mode,
+        read_policy=settings.read_policy,
+        prompt_policy=settings.prompt_policy,
         auto_retrieve_enabled=settings.auto_retrieve_enabled,
         manual_write_enabled=settings.manual_write_enabled,
         autonomous_write_enabled=settings.autonomous_write_enabled,
+        debug_enabled=memory_store.debug_enabled(),
         path=str(memory_store.settings_path(session_id)),
     )
 
@@ -343,6 +346,9 @@ def get_session_memory_workspace(request: Request, session_id: str) -> MemoryWor
         entry_count=summary["entry_count"],
         daily_files=list(summary["daily_files"]),
         settings_mode=summary["settings"]["mode"],
+        settings_read_policy=summary["settings"]["read_policy"],
+        settings_prompt_policy=summary["settings"]["prompt_policy"],
+        debug_enabled=bool(summary.get("debug_enabled")),
     )
 
 
@@ -583,7 +589,12 @@ def patch_session_memory_settings(
     if session.state != "active":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is closed.")
     try:
-        memory_store.update_settings(session_id, mode=payload.mode)
+        memory_store.update_settings(
+            session_id,
+            mode=payload.mode,
+            read_policy=payload.read_policy,
+            prompt_policy=payload.prompt_policy,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _serialize_memory_settings(session_id, memory_store)

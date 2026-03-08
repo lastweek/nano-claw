@@ -87,6 +87,7 @@ class Agent:
             base_url=getattr(self.llm, "base_url", None),
             streaming_enabled=current_config.ui.enable_streaming,
         )
+        setattr(self.context, "logger", self.logger)
 
         # Share logger with LLM client for request/response logging
         if hasattr(self.llm, 'logger'):
@@ -389,12 +390,14 @@ Be concise and helpful."""
             normalized_user_input=prepared_turn_input.normalized_user_message,
         )
         public_turn_id = getattr(self.context, "current_turn_id", turn_id)
-        if self.memory_store is not None and prepared_turn_input.memory_entry_ids:
+        if self.memory_store is not None and prepared_turn_input.memory_prompt_items:
             self.memory_store.record_prompt_injection(
                 self.context.session_id,
                 turn_id=public_turn_id,
                 query=prepared_turn_input.normalized_user_message,
-                entry_ids=prepared_turn_input.memory_entry_ids,
+                items=prepared_turn_input.memory_prompt_items,
+                policy_name=prepared_turn_input.memory_prompt_policy or "unknown",
+                logger=self.logger,
             )
         tools_used: List[str] = []
         skills_used: List[str] = []
@@ -573,6 +576,7 @@ Be concise and helpful."""
                     turn_id=public_turn_id,
                     user_message=user_message,
                     assistant_message=final_response,
+                    logger=self.logger,
                 )
             except Exception as exc:
                 self.logger.log_error(

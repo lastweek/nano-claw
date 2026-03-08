@@ -153,6 +153,9 @@ class MemoryWorkspaceResponse(BaseModel):
     entry_count: int
     daily_files: list[str]
     settings_mode: str
+    settings_read_policy: str
+    settings_prompt_policy: str
+    debug_enabled: bool
 
 
 class MemoryDocumentRequest(BaseModel):
@@ -277,16 +280,21 @@ class MemorySettingsResponse(BaseModel):
 
     session_id: str
     mode: str
+    read_policy: str
+    prompt_policy: str
     auto_retrieve_enabled: bool
     manual_write_enabled: bool
     autonomous_write_enabled: bool
+    debug_enabled: bool
     path: str
 
 
 class MemorySettingsUpdateRequest(BaseModel):
     """Update per-session memory mode settings."""
 
-    mode: str
+    mode: str | None = None
+    read_policy: str | None = None
+    prompt_policy: str | None = None
 
 
 class MemoryAuditEventResponse(BaseModel):

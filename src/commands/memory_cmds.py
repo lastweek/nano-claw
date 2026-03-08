@@ -27,11 +27,15 @@ def register_memory_commands(registry) -> None:
             "/memory search <query>",
             "/memory forget <kind> <title>",
             "/memory mode <off|manual_only|auto>",
+            "/memory read-policy <curated_only|curated_plus_recent_daily|search_all_ranked>",
+            "/memory prompt-policy <curated_only|curated_plus_recent_daily|search_all_ranked>",
         ],
         examples=[
             "/memory show",
             "/memory remember decision deploy-order :: Run migration before deploy",
             "/memory daily today-note :: Investigated SSE reconnect issue",
+            "/memory read-policy curated_plus_recent_daily",
+            "/memory prompt-policy curated_only",
         ],
         subcommands=[
             CommandSubcommandHelp(
@@ -64,6 +68,16 @@ def register_memory_commands(registry) -> None:
                 usage="/memory mode <off|manual_only|auto>",
                 description="Set the current session memory writeback mode.",
             ),
+            CommandSubcommandHelp(
+                name="read-policy",
+                usage="/memory read-policy <curated_only|curated_plus_recent_daily|search_all_ranked>",
+                description="Set the default memory_search behavior for the current session.",
+            ),
+            CommandSubcommandHelp(
+                name="prompt-policy",
+                usage="/memory prompt-policy <curated_only|curated_plus_recent_daily|search_all_ranked>",
+                description="Set the automatic prompt-memory selection policy for the current session.",
+            ),
         ],
     )
 
@@ -94,6 +108,8 @@ def register_memory_commands(registry) -> None:
                             f"[bold]Root:[/bold] {summary['root_dir']}",
                             f"[bold]Document:[/bold] {summary['document_path']}",
                             f"[bold]Mode:[/bold] {summary['settings']['mode']}",
+                            f"[bold]Read policy:[/bold] {summary['settings']['read_policy']}",
+                            f"[bold]Prompt policy:[/bold] {summary['settings']['prompt_policy']}",
                             f"[bold]Entries:[/bold] {summary['entry_count']}",
                             f"[bold]Daily logs:[/bold] {len(summary['daily_files'])}",
                         ]
@@ -215,6 +231,38 @@ def register_memory_commands(registry) -> None:
                 mode=remainder,
             )
             console.print(f"[green]Updated memory mode:[/green] {settings.mode}")
+            return
+
+        if subcommand == "read-policy":
+            if not remainder:
+                console.print(
+                    "[yellow]Use /memory read-policy <curated_only|curated_plus_recent_daily|search_all_ranked>[/yellow]"
+                )
+                command = registry.get_command("memory")
+                if command is not None:
+                    render_command_help(console, command, "read-policy")
+                return
+            settings = memory_store.update_settings(
+                session_context.session_id,
+                read_policy=remainder,
+            )
+            console.print(f"[green]Updated memory read policy:[/green] {settings.read_policy}")
+            return
+
+        if subcommand == "prompt-policy":
+            if not remainder:
+                console.print(
+                    "[yellow]Use /memory prompt-policy <curated_only|curated_plus_recent_daily|search_all_ranked>[/yellow]"
+                )
+                command = registry.get_command("memory")
+                if command is not None:
+                    render_command_help(console, command, "prompt-policy")
+                return
+            settings = memory_store.update_settings(
+                session_context.session_id,
+                prompt_policy=remainder,
+            )
+            console.print(f"[green]Updated memory prompt policy:[/green] {settings.prompt_policy}")
             return
 
         command = registry.get_command("memory")

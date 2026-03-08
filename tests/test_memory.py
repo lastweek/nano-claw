@@ -1,5 +1,6 @@
 """Tests for managed Markdown session memory."""
 
+from datetime import datetime, timedelta
 from rich.console import Console
 
 from src.agent import Agent
@@ -182,14 +183,15 @@ def test_archived_and_superseded_entries_are_filtered_from_default_retrieval(tem
 
     selection = store.build_prompt_memory("sess_lifecycle", "deploy")
     assert selection is not None
-    assert [entry.entry_id for entry in selection.entries] == [replacement.entry_id]
+    assert [item.entry_id for item in selection.items if item.entry_id] == [replacement.entry_id]
     assert "deploy-order v2" in selection.note
     assert "provider" not in selection.note
 
 
-def test_daily_logs_are_searchable_but_not_auto_injected(temp_dir, http_runtime_config):
-    """Daily logs should remain searchable evidence but stay out of automatic prompt injection."""
+def test_curated_only_prompt_policy_keeps_daily_logs_out_of_prompt_injection(temp_dir, http_runtime_config):
+    """The curated_only prompt policy should ignore daily logs during prompt construction."""
     store = _make_store(temp_dir, http_runtime_config)
+    store.update_settings("sess_daily", prompt_policy="curated_only")
     store.upsert_curated_entry(
         "sess_daily",
         kind="fact",
@@ -210,6 +212,47 @@ def test_daily_logs_are_searchable_but_not_auto_injected(temp_dir, http_runtime_
 
     selection = store.build_prompt_memory("sess_daily", "evidence")
     assert selection is None
+
+
+def test_curated_plus_recent_daily_prompt_policy_includes_recent_daily_hits(temp_dir, http_runtime_config):
+    """The default prompt policy should include relevant recent daily notes when they help."""
+    store = _make_store(temp_dir, http_runtime_config)
+    today = datetime.now().strftime("%Y-%m-%d")
+    store.append_daily_log(
+        "sess_recent_daily",
+        date=today,
+        title="sse-note",
+        content="Investigated the SSE reconnect bug in the admin stream.",
+        reason="seed recent daily",
+    )
+
+    selection = store.build_prompt_memory("sess_recent_daily", "SSE reconnect bug")
+
+    assert selection is not None
+    assert selection.policy_name == "curated_plus_recent_daily"
+    assert any(item.scope == "daily" for item in selection.items)
+    assert "Recent daily notes:" in selection.note
+    assert "sse-note" in selection.note
+
+
+def test_search_all_ranked_prompt_policy_can_include_older_daily_hits(temp_dir, http_runtime_config):
+    """The search_all_ranked prompt policy can pull in older daily entries when they rank well."""
+    store = _make_store(temp_dir, http_runtime_config)
+    store.update_settings("sess_history", prompt_policy="search_all_ranked")
+    old_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+    store.append_daily_log(
+        "sess_history",
+        date=old_date,
+        title="older-note",
+        content="Decided to keep the release gate on green integration tests.",
+        reason="seed historical daily",
+    )
+
+    selection = store.build_prompt_memory("sess_history", "release gate")
+
+    assert selection is not None
+    assert selection.policy_name == "search_all_ranked"
+    assert any(item.scope == "daily" and item.date == old_date for item in selection.items)
 
 
 def test_memory_policy_blocks_secret_like_content_and_manual_off_mode(temp_dir, http_runtime_config):
@@ -397,7 +440,8 @@ def test_turn_prep_injects_top_entries_not_full_document(temp_dir, http_runtime_
     assert "Session memory:" in prepared.memory_note
     assert "daily-note" not in prepared.memory_note
     assert "# Session Memory" not in prepared.memory_note
-    assert prepared.memory_entry_ids
+    assert prepared.memory_prompt_items
+    assert prepared.memory_prompt_policy == "curated_plus_recent_daily"
 
     messages = build_conversation_messages(
         system_message={"role": "system", "content": "base"},
@@ -431,16 +475,29 @@ def test_memory_slash_commands_use_managed_store(temp_dir, http_runtime_config):
         console,
         {"memory_store": store, "session_context": session_context},
     )
+    assert registry.execute(
+        "/memory read-policy curated_only",
+        console,
+        {"memory_store": store, "session_context": session_context},
+    )
+    assert registry.execute(
+        "/memory prompt-policy search_all_ranked",
+        console,
+        {"memory_store": store, "session_context": session_context},
+    )
 
     entries = store.list_entries("sess_cli")
     assert len(entries) == 1
     assert entries[0].title == "deploy-order"
     assert store.get_settings("sess_cli").mode == "auto"
+    assert store.get_settings("sess_cli").read_policy == "curated_only"
+    assert store.get_settings("sess_cli").prompt_policy == "search_all_ranked"
 
 
 def test_prompt_injection_and_search_are_audited(temp_dir, http_runtime_config):
     """Retrieval and prompt injection should be visible in the memory audit trail."""
     store = _make_store(temp_dir, http_runtime_config)
+    today = datetime.now().strftime("%Y-%m-%d")
     entry = store.upsert_curated_entry(
         "sess_audit",
         kind="fact",
@@ -448,12 +505,23 @@ def test_prompt_injection_and_search_are_audited(temp_dir, http_runtime_config):
         content="Run migrations before deploy.",
         reason="seed",
     )
-    _ = store.search("sess_audit", query="deploy", include_daily=False, actor="http_api")
+    store.append_daily_log(
+        "sess_audit",
+        date=today,
+        title="daily-audit",
+        content="Investigated deploy drift yesterday.",
+        reason="seed daily",
+    )
+    _ = store.search("sess_audit", query="deploy", include_daily=True, actor="http_api")
     store.record_prompt_injection(
         "sess_audit",
         turn_id="turn_123",
         query="deploy",
-        entry_ids=[entry.entry_id],
+        policy_name="curated_plus_recent_daily",
+        items=[
+            store.build_prompt_memory("sess_audit", "deploy").items[0],
+            next(item for item in store.build_prompt_memory("sess_audit", "drift").items if item.scope == "daily"),
+        ],
     )
 
     audit = store.read_audit_log("sess_audit")
@@ -461,3 +529,117 @@ def test_prompt_injection_and_search_are_audited(temp_dir, http_runtime_config):
     injection = next(event for event in audit if event["event"] == "prompt_injection")
     assert injection["turn_id"] == "turn_123"
     assert injection["entry_ids"] == [entry.entry_id]
+    assert injection["prompt_policy"] == "curated_plus_recent_daily"
+    assert "daily" in injection["item_scopes"]
+    assert injection["daily_dates"] == [today]
+
+
+def test_settings_default_to_curated_plus_recent_daily_policies(temp_dir, http_runtime_config):
+    """Session settings should default prompt/read policy from config when no file exists yet."""
+    store = _make_store(temp_dir, http_runtime_config)
+
+    settings = store.get_settings("sess_defaults")
+
+    assert settings.mode == "manual_only"
+    assert settings.read_policy == "curated_plus_recent_daily"
+    assert settings.prompt_policy == "curated_plus_recent_daily"
+
+
+def test_read_policy_defaults_and_explicit_overrides(temp_dir, http_runtime_config):
+    """The read policy should drive default memory_search behavior, but explicit args should win."""
+    store = _make_store(temp_dir, http_runtime_config)
+    today = datetime.now().strftime("%Y-%m-%d")
+    old_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+    store.append_daily_log(
+        "sess_read_policy",
+        date=today,
+        title="recent-note",
+        content="Investigated the recent reconnect issue.",
+        reason="seed recent daily",
+    )
+    store.append_daily_log(
+        "sess_read_policy",
+        date=old_date,
+        title="old-note",
+        content="This old reconnect note should not appear by default.",
+        reason="seed old daily",
+    )
+
+    plan, hits = store.search_with_policy(
+        "sess_read_policy",
+        query="reconnect",
+        actor="tool",
+    )
+    assert plan.policy_name == "curated_plus_recent_daily"
+    assert plan.recent_daily_days == 2
+    assert all(hit.date != old_date for hit in hits if hit.scope == "daily")
+
+    explicit_plan, explicit_hits = store.search_with_policy(
+        "sess_read_policy",
+        query="old reconnect note",
+        include_daily=True,
+        actor="tool",
+    )
+    assert explicit_plan.recent_daily_days is None
+    assert any(hit.date == old_date for hit in explicit_hits if hit.scope == "daily")
+
+    no_daily_plan, no_daily_hits = store.search_with_policy(
+        "sess_read_policy",
+        query="recent reconnect issue",
+        include_daily=False,
+        actor="tool",
+    )
+    assert no_daily_plan.include_daily is False
+    assert all(hit.scope != "daily" for hit in no_daily_hits)
+
+
+def test_memory_debug_emits_audit_and_console_trace(temp_dir, http_runtime_config, monkeypatch, capsys):
+    """MEMORY_DEBUG should surface explicit write, search, and prompt-selection steps."""
+    monkeypatch.setenv("MEMORY_DEBUG", "1")
+    store = _make_store(temp_dir, http_runtime_config)
+    entry = store.upsert_curated_entry(
+        "sess_debug",
+        kind="fact",
+        title="user-name",
+        content="The user's name is Alice.",
+        reason="persist identity for later turns",
+        source="assistant_explicit",
+    )
+    store.append_daily_log(
+        "sess_debug",
+        date="2026-03-06",
+        title="recent-note",
+        content="Investigated the SSE reconnect bug.",
+        reason="seed recent daily",
+    )
+    plan, _hits = store.search_with_policy(
+        "sess_debug",
+        query="Alice reconnect",
+        actor="tool",
+        turn_id="turn_debug",
+    )
+    selection = store.build_prompt_memory("sess_debug", "Alice reconnect")
+    assert selection is not None
+    store.record_prompt_injection(
+        "sess_debug",
+        turn_id="turn_debug",
+        query="Alice reconnect",
+        policy_name=selection.policy_name,
+        items=selection.items,
+    )
+
+    audit = store.read_audit_log("sess_debug")
+    debug_events = {event["event"] for event in audit if event["event"].startswith("debug_")}
+    assert "debug_write_requested" in debug_events
+    assert "debug_write_policy_decision" in debug_events
+    assert "debug_write_applied" in debug_events
+    assert "debug_search_plan" in debug_events
+    assert "debug_search_completed" in debug_events
+    assert "debug_prompt_policy_selection" in debug_events
+    assert any(
+        event["event"] == "debug_prompt_item_selected" and event.get("entry_id") == entry.entry_id
+        for event in audit
+    )
+    captured = capsys.readouterr()
+    assert "[MEMORY]" in captured.out
+    assert f"policy={plan.policy_name}" in captured.out

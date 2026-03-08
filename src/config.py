@@ -1,6 +1,6 @@
 """Centralized configuration for nano-claw."""
 
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, get_args
 from pathlib import Path
 import yaml
 from pydantic import Field, field_validator
@@ -92,10 +92,23 @@ class ContextConfig(BaseSettings):
         extra="ignore"
     )
 
-    auto_compact: bool = Field(default=True)
-    auto_compact_threshold: float = Field(default=0.85)
-    target_usage_after_compaction: float = Field(default=0.60)
-    min_recent_turns: int = Field(default=6, ge=1)
+    auto_compact: bool = Field(
+        default=True,
+        description="Automatically compact when estimated baseline context usage crosses the configured threshold.",
+    )
+    auto_compact_threshold: float = Field(
+        default=0.85,
+        description="Start compaction when estimated baseline context usage reaches this fraction of the model context window.",
+    )
+    target_usage_after_compaction: float = Field(
+        default=0.60,
+        description="Target estimated baseline context usage after compaction finishes.",
+    )
+    min_recent_turns: int = Field(
+        default=6,
+        ge=1,
+        description="Minimum number of most-recent complete turns to retain as raw transcript after compaction.",
+    )
 
     @field_validator("auto_compact_threshold")
     @classmethod
@@ -160,9 +173,26 @@ class MemoryConfig(BaseSettings):
 
     enabled: bool = Field(default=True)
     root_dir: str = Field(default="~/.nano-claw/sessions")
+    debug: bool = Field(default=False)
     auto_load_memory: bool = Field(default=True)
     max_auto_chars: int = Field(default=4000, ge=1)
     max_search_results: int = Field(default=10, ge=1)
+    default_read_policy: str = Field(default="curated_plus_recent_daily")
+    default_prompt_policy: str = Field(default="curated_plus_recent_daily")
+    recent_daily_days: int = Field(default=2, ge=1)
+    max_auto_curated_hits: int = Field(default=3, ge=1)
+    max_auto_daily_hits: int = Field(default=2, ge=0)
+
+    @field_validator("default_read_policy", "default_prompt_policy")
+    @classmethod
+    def validate_memory_policy_name(cls, value: str) -> str:
+        """Reject unsupported memory policy names at config load time."""
+        normalized = str(value or "").strip()
+        if normalized not in set(get_args(Literal["curated_only", "curated_plus_recent_daily", "search_all_ranked"])):
+            raise ValueError(
+                "memory policy must be one of: curated_only, curated_plus_recent_daily, search_all_ranked"
+            )
+        return normalized
 
 
 class MacOSToolsConfig(BaseSettings):

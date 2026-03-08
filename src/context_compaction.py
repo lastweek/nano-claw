@@ -1,4 +1,4 @@
-"""Session-local context compaction with rolling summaries."""
+"""Session-local context compaction with rolling handoff summaries."""
 
 from __future__ import annotations
 
@@ -12,6 +12,21 @@ from src.context_usage import (
     build_context_usage_snapshot,
     estimate_json_tokens,
 )
+
+_HANDOFF_SCHEMA_VERSION = 1
+_HANDOFF_FIELDS: tuple[tuple[str, str], ...] = (
+    ("goal", "Goal"),
+    ("active_work", "Active work"),
+    ("important_decisions_in_effect", "Important decisions in effect"),
+    ("key_discoveries", "Key discoveries"),
+    ("completed_work", "Completed work"),
+    ("working_set_files", "Working set files"),
+    ("open_loops", "Open loops"),
+    ("next_steps", "Next steps"),
+    ("risks_or_blockers", "Risks or blockers"),
+)
+_HANDOFF_ITEM_LIMIT = 5
+_HANDOFF_ITEM_CHAR_LIMIT = 220
 
 
 @dataclass(frozen=True)
@@ -47,6 +62,7 @@ class ContextCompactionResult:
     summary_tokens: int
     before_tokens: int
     after_tokens: int
+    used_fallback: bool = False
     error: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -197,6 +213,7 @@ class ContextCompactionManager:
                 summary_tokens=self._current_summary_tokens(),
                 before_tokens=plan.before_tokens,
                 after_tokens=plan.before_tokens,
+                used_fallback=False,
                 details=details,
             )
 
@@ -224,6 +241,9 @@ class ContextCompactionManager:
         self.session_context.replace_history_with_retained_turns(plan.retained_turns)
 
         after_snapshot = build_context_usage_snapshot(agent, self.session_context, self.skill_manager)
+        result_details = {**details, "used_fallback": summary_error is not None}
+        if summary_error is not None:
+            result_details["fallback_error"] = summary_error
         return ContextCompactionResult(
             status="compacted",
             reason=reason,
@@ -232,8 +252,9 @@ class ContextCompactionManager:
             summary_tokens=estimate_json_tokens(self.session_context.get_summary_message()),
             before_tokens=plan.before_tokens,
             after_tokens=after_snapshot.used_tokens,
-            error=summary_error,
-            details=details,
+            used_fallback=summary_error is not None,
+            error=None,
+            details=result_details,
         )
 
     def render_summary_for_cli(self) -> str:
@@ -471,10 +492,13 @@ class ContextCompactionManager:
         reason: str,
         turn_id: int | None,
     ) -> tuple[dict[str, Any] | None, str]:
-        """Ask the main model to merge older turns into a rolling freeform summary."""
+        """Ask the main model to merge older turns into one structured rolling handoff."""
         previous_summary = self.session_context.get_summary()
+        previous_payload = self._normalize_handoff_payload(
+            previous_summary.payload if previous_summary else None
+        )
         prompt = {
-            "previous_summary": previous_summary.rendered_text if previous_summary else "",
+            "previous_handoff": previous_payload,
             "turns_to_compact": [
                 {
                     "turn_index": turn.index,
@@ -486,37 +510,38 @@ class ContextCompactionManager:
             "active_skills": self.session_context.get_active_skills(),
             "reason": reason,
         }
-        template = (
-            "Conversation summary for earlier turns:\n\n"
-            "## Goal\n"
-            "- ...\n\n"
-            "## Instructions\n"
-            "- ...\n\n"
-            "## Discoveries\n"
-            "- ...\n\n"
-            "## Accomplished\n"
-            "- ...\n\n"
-            "## Relevant files / directories\n"
-            "- ...\n\n"
-            "This summary replaces older raw turns. Prefer recent raw turns if they conflict."
-        )
+        schema = {
+            "schema_version": _HANDOFF_SCHEMA_VERSION,
+            "goal": ["short bullet"],
+            "active_work": ["short bullet"],
+            "important_decisions_in_effect": ["short bullet"],
+            "key_discoveries": ["short bullet"],
+            "completed_work": ["short bullet"],
+            "working_set_files": ["path or file"],
+            "open_loops": ["short bullet"],
+            "next_steps": ["short bullet"],
+            "risks_or_blockers": ["short bullet"],
+        }
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are summarizing older conversation turns for context compaction. "
-                    "Return only freeform text using the exact template provided. "
-                    "Preserve user goals, repository facts, user preferences, completed work, "
-                    "open loops, and important files. If a section has no content, write '- none'. "
-                    "Do not include markdown fences or extra commentary."
+                    "You are building a rolling session handoff for context compaction. "
+                    "Return only one valid JSON object matching the provided schema. "
+                    "Each field must be an array of short strings. Keep only high-value handoff state: "
+                    "current goal, active work, important decisions, discoveries, completed work, "
+                    "working files, open loops, next steps, and blockers. "
+                    "This handoff is temporary session continuity, not durable profile memory. "
+                    "Preserve continuity from the prior handoff when still relevant. "
+                    "Do not include markdown fences, prose outside JSON, or raw transcript dumps."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    "Summarize these older turns into the template below. Merge with any prior "
-                    "summary if provided.\n\n"
-                    f"{template}\n\n"
+                    "Build the next rolling handoff JSON from the prior handoff plus these compacted turns.\n\n"
+                    "SCHEMA EXAMPLE:\n"
+                    f"{json.dumps(schema, ensure_ascii=True, indent=2)}\n\n"
                     "INPUT DATA (JSON):\n"
                     f"{json.dumps(prompt, ensure_ascii=True, indent=2)}"
                 ),
@@ -537,50 +562,152 @@ class ContextCompactionManager:
                 else None
             ),
         )
-        rendered = (response.get("content") or "").strip()
-        if not rendered:
+        content = (response.get("content") or "").strip()
+        if not content:
             raise ValueError("empty summarizer output")
-        return None, rendered
+        payload = self._parse_handoff_payload(content)
+        return payload, self._render_handoff_payload(payload)
 
     def _build_fallback_summary(self, turns_to_compact: list[Any]) -> tuple[dict[str, Any] | None, str]:
-        """Build a deterministic emergency summary when the summarizer fails."""
-        lines = ["Conversation summary for earlier turns:", ""]
-        previous_summary = self.session_context.get_summary()
-        if previous_summary and previous_summary.rendered_text:
-            lines.append("## Prior summary")
-            lines.append(previous_summary.rendered_text.strip())
+        """Build a deterministic emergency handoff when structured summarization fails."""
+        payload = self._build_fallback_handoff_payload(turns_to_compact)
+        return payload, self._render_handoff_payload(payload)
+
+    def _normalize_handoff_payload(self, payload: dict[str, Any] | None) -> dict[str, Any]:
+        """Normalize arbitrary payloads into the stable handoff schema."""
+        normalized: dict[str, Any] = {"schema_version": _HANDOFF_SCHEMA_VERSION}
+        payload = payload or {}
+        for key, _label in _HANDOFF_FIELDS:
+            value = payload.get(key, [])
+            items: list[str] = []
+            if isinstance(value, str):
+                value = [value]
+            if isinstance(value, list):
+                for item in value:
+                    if not isinstance(item, str):
+                        continue
+                    compact = " ".join(item.split()).strip()
+                    if not compact:
+                        continue
+                    compact = self._truncate_text(compact, limit=_HANDOFF_ITEM_CHAR_LIMIT)
+                    if compact not in items:
+                        items.append(compact)
+                    if len(items) >= _HANDOFF_ITEM_LIMIT:
+                        break
+            normalized[key] = items
+        return normalized
+
+    def _parse_handoff_payload(self, content: str) -> dict[str, Any]:
+        """Parse one structured handoff JSON object from model output."""
+        text = content.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if "\n" in text:
+                text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise ValueError("invalid compaction handoff JSON") from None
+            payload = json.loads(text[start : end + 1])
+        if not isinstance(payload, dict):
+            raise ValueError("compaction handoff must be a JSON object")
+        return self._normalize_handoff_payload(payload)
+
+    def _render_handoff_payload(self, payload: dict[str, Any]) -> str:
+        """Render the structured handoff into deterministic prompt text."""
+        lines = ["Session handoff for earlier turns:", ""]
+        for key, label in _HANDOFF_FIELDS:
+            lines.append(f"## {label}")
+            items = payload.get(key, [])
+            if items:
+                for item in items:
+                    lines.append(f"- {item}")
+            else:
+                lines.append("- none")
             lines.append("")
+        lines.append("This handoff replaces older raw turns. Prefer recent raw turns if they conflict.")
+        return "\n".join(lines).strip()
 
-        lines.append("## Goal")
-        if turns_to_compact:
-            for turn in turns_to_compact:
-                lines.append(f"- {self._truncate_text(turn.user_message.get('content', ''))}")
-        else:
-            lines.append("- none")
-        lines.append("")
+    def _build_fallback_handoff_payload(self, turns_to_compact: list[Any]) -> dict[str, Any]:
+        """Build a deterministic structured handoff from the compacted turns."""
+        previous_summary = self.session_context.get_summary()
+        payload = self._normalize_handoff_payload(previous_summary.payload if previous_summary else None)
+        goals: list[str] = []
+        completed: list[str] = []
+        next_steps: list[str] = []
+        blockers: list[str] = []
+        files: list[str] = list(payload.get("working_set_files", []))
 
-        lines.append("## Instructions")
-        lines.append("- none")
-        lines.append("")
+        for turn in turns_to_compact:
+            user_text = self._truncate_text(turn.user_message.get("content", ""))
+            assistant_text = self._truncate_text(turn.assistant_message.get("content", ""))
+            self._append_unique(goals, user_text)
+            self._append_unique(completed, assistant_text)
+            for match in self._extract_file_references(user_text):
+                self._append_unique(files, match)
+            for match in self._extract_file_references(assistant_text):
+                self._append_unique(files, match)
+            lowered_user = str(turn.user_message.get("content", "")).lower()
+            lowered_assistant = str(turn.assistant_message.get("content", "")).lower()
+            if any(token in lowered_user for token in ("remember to", "next", "todo", "follow up", "need to")):
+                self._append_unique(next_steps, user_text)
+            if any(token in lowered_user or token in lowered_assistant for token in ("blocked", "blocker", "failed", "cannot", "can't", "error")):
+                self._append_unique(blockers, user_text)
 
-        lines.append("## Discoveries")
-        lines.append("- Fallback summary generated because automatic context summarization failed.")
-        lines.append("")
+        self._merge_handoff_items(payload, "goal", goals[:2])
+        self._merge_handoff_items(payload, "active_work", goals[-2:])
+        self._merge_handoff_items(payload, "completed_work", completed[-3:])
+        self._merge_handoff_items(
+            payload,
+            "key_discoveries",
+            ["Fallback handoff generated because structured compaction summarization failed."],
+        )
+        self._merge_handoff_items(payload, "working_set_files", files)
+        self._merge_handoff_items(payload, "open_loops", next_steps[:2])
+        self._merge_handoff_items(payload, "next_steps", next_steps[:3])
+        self._merge_handoff_items(payload, "risks_or_blockers", blockers[:2])
+        return payload
 
-        lines.append("## Accomplished")
-        if turns_to_compact:
-            for turn in turns_to_compact:
-                lines.append(f"- {self._truncate_text(turn.assistant_message.get('content', ''))}")
-        else:
-            lines.append("- none")
-        lines.append("")
+    def _merge_handoff_items(self, payload: dict[str, Any], key: str, values: list[str]) -> None:
+        """Merge new items into one handoff section with stable dedupe."""
+        current = list(payload.get(key, []))
+        for value in values:
+            self._append_unique(current, value)
+            if len(current) >= _HANDOFF_ITEM_LIMIT:
+                break
+        payload[key] = current[:_HANDOFF_ITEM_LIMIT]
 
-        lines.append("## Relevant files / directories")
-        lines.append("- none")
-        lines.append("")
+    def _append_unique(self, items: list[str], value: str) -> None:
+        """Append one normalized item if it is non-empty and not already present."""
+        compact = " ".join(str(value or "").split()).strip()
+        if not compact:
+            return
+        if compact not in items:
+            items.append(compact)
 
-        lines.append("This summary replaces older raw turns. Prefer recent raw turns if they conflict.")
-        return None, "\n".join(lines).strip()
+    def _extract_file_references(self, text: str) -> list[str]:
+        """Return path-like references from one message body."""
+        found: list[str] = []
+        for token in str(text).replace("(", " ").replace(")", " ").split():
+            candidate = token.strip(".,:;[]{}<>`'\"")
+            if "/" not in candidate and "." not in candidate:
+                continue
+            if candidate.startswith(("http://", "https://")):
+                continue
+            if any(
+                candidate.endswith(ext)
+                for ext in (".py", ".md", ".yaml", ".yml", ".json", ".toml", ".txt", ".js", ".ts", ".tsx", ".jsx")
+            ) or "/" in candidate:
+                self._append_unique(found, candidate)
+            if len(found) >= _HANDOFF_ITEM_LIMIT:
+                break
+        return found
 
     def _truncate_text(self, value: Any, *, limit: int = 160) -> str:
         """Convert arbitrary values into stable, compact summary strings."""

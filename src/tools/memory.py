@@ -181,15 +181,19 @@ class MemorySearchTool(Tool):
         try:
             query = self._require_param(kwargs, "query")
             limit = kwargs.get("limit")
-            include_daily = bool(kwargs.get("include_daily", True))
-            include_inactive = bool(kwargs.get("include_inactive", False))
-            hits = self.memory_store.search(
+            include_daily = kwargs["include_daily"] if "include_daily" in kwargs else None
+            include_inactive = kwargs["include_inactive"] if "include_inactive" in kwargs else None
+            logger = getattr(context, "logger", None)
+            turn_id = getattr(context, "current_turn_id", None)
+            _plan, hits = self.memory_store.search_with_policy(
                 context.session_id,
                 query=query,
                 limit=limit,
                 include_daily=include_daily,
                 include_inactive=include_inactive,
                 actor="tool",
+                logger=logger,
+                turn_id=turn_id,
             )
             return ToolResult(success=True, data=_format_search_results(query, hits))
         except Exception as exc:
@@ -293,6 +297,8 @@ class MemoryWriteTool(Tool):
             source = str(kwargs.get("source") or "assistant_explicit")
             confidence = kwargs.get("confidence")
             last_verified_at = kwargs.get("last_verified_at")
+            logger = getattr(context, "logger", None)
+            turn_id = getattr(context, "current_turn_id", None)
 
             if action == "upsert_curated":
                 kind = self._require_param(kwargs, "kind")
@@ -308,6 +314,8 @@ class MemoryWriteTool(Tool):
                     confidence=confidence,
                     last_verified_at=last_verified_at,
                     actor="manual",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
                 return ToolResult(success=True, data=f"Updated curated memory:\n\n{_format_entry(entry)}")
 
@@ -323,6 +331,8 @@ class MemoryWriteTool(Tool):
                     last_verified_at=last_verified_at,
                     reason=reason,
                     actor="manual",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
                 return ToolResult(success=True, data=f"Updated curated memory:\n\n{_format_entry(entry)}")
 
@@ -333,6 +343,8 @@ class MemoryWriteTool(Tool):
                     entry_id,
                     reason=reason,
                     actor="manual",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
                 return ToolResult(success=True, data=f"Archived curated memory:\n\n{_format_entry(entry)}")
 
@@ -349,6 +361,8 @@ class MemoryWriteTool(Tool):
                     confidence=confidence,
                     last_verified_at=last_verified_at,
                     actor="manual",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
                 return ToolResult(success=True, data=f"Superseded curated memory:\n\n{_format_entry(entry)}")
 
@@ -360,6 +374,8 @@ class MemoryWriteTool(Tool):
                     title=kwargs.get("title"),
                     reason=reason,
                     actor="manual",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
                 return ToolResult(success=True, data=f"Deleted curated memory entry from {path}")
 
@@ -374,6 +390,8 @@ class MemoryWriteTool(Tool):
                     reason=reason,
                     source=source,
                     actor="manual",
+                    logger=logger,
+                    turn_id=turn_id,
                 )
                 return ToolResult(success=True, data=f"Appended daily memory entry to {path}")
 

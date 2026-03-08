@@ -32,10 +32,10 @@ server:
   sse_heartbeat_seconds: 10
 
 context:
-  auto_compact: true
-  auto_compact_threshold: 0.85
-  target_usage_after_compaction: 0.60
-  min_recent_turns: 6
+  auto_compact: true  # Automatically compact when estimated context usage crosses the threshold below.
+  auto_compact_threshold: 0.85  # Start compaction when estimated baseline usage reaches 85% of the model context window.
+  target_usage_after_compaction: 0.60  # Try to reduce estimated baseline usage to about 60% after compaction completes.
+  min_recent_turns: 6  # Always keep at least this many most-recent complete turns as raw transcript after compaction.
 
 subagents:
   enabled: true
@@ -51,9 +51,15 @@ plan:
 memory:
   enabled: true
   root_dir: ~/.nano-claw/sessions
+  debug: false
   auto_load_memory: true
   max_auto_chars: 4000
   max_search_results: 10
+  default_read_policy: curated_plus_recent_daily
+  default_prompt_policy: curated_plus_recent_daily
+  recent_daily_days: 2
+  max_auto_curated_hits: 3
+  max_auto_daily_hits: 2
 
 macos_tools:
   enabled: true

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from rich.console import Console
@@ -36,6 +37,7 @@ def register_context_commands(registry) -> None:
         usage=[
             "/compact",
             "/compact show",
+            "/compact history",
             "/compact now",
             "/compact auto on",
             "/compact auto off",
@@ -52,6 +54,12 @@ def register_context_commands(registry) -> None:
                 usage="/compact show",
                 description="Show the current rolling summary and its metadata.",
                 examples=["/compact show"],
+            ),
+            CommandSubcommandHelp(
+                name="history",
+                usage="/compact history",
+                description="Show recent compaction handoff snapshots for this session.",
+                examples=["/compact history"],
             ),
             CommandSubcommandHelp(
                 name="now",
@@ -225,9 +233,9 @@ def register_context_commands(registry) -> None:
                     "3. Select turns to summarize: "
                     f"force mode compacts all {len(plan.turns_to_compact)} evictable older turn(s)."
                 )
-                if result.error:
+                if result.used_fallback:
                     lines.append(
-                        "4. Summary generation failed, so nano-claw used the deterministic fallback summary."
+                        "4. Structured summary generation fell back to the deterministic handoff builder."
                     )
                 else:
                     lines.append(
@@ -242,6 +250,46 @@ def register_context_commands(registry) -> None:
                 )
 
             console.print(Panel("\n".join(lines), title="Manual Compaction", border_style="cyan"))
+
+        def render_history() -> None:
+            logger = getattr(agent, "logger", None)
+            if logger is None or not getattr(logger, "enabled", False):
+                console.print("[yellow]Compaction history is unavailable for this session[/yellow]")
+                return
+
+            history_path = logger.get_compaction_history_path()
+            if not history_path.exists() or not history_path.read_text(encoding="utf-8").strip():
+                console.print("[yellow]No compaction history is available for this session[/yellow]")
+                return
+
+            entries = [
+                json.loads(line)
+                for line in history_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            recent_entries = entries[-5:]
+            table = Table(title="Compaction History", show_header=True, header_style="bold cyan")
+            table.add_column("At", style="white", width=20)
+            table.add_column("#", style="green", width=4)
+            table.add_column("Reason", style="cyan", width=18)
+            table.add_column("Covered", style="magenta", width=8)
+            table.add_column("Retained", style="magenta", width=8)
+            table.add_column("Preview", style="white", width=52)
+
+            for entry in recent_entries:
+                preview = " ".join(str(entry.get("rendered_text", "")).split())
+                if len(preview) > 52:
+                    preview = preview[:49].rstrip() + "..."
+                table.add_row(
+                    str(entry.get("timestamp", ""))[:19],
+                    str(entry.get("compaction_count", "")),
+                    str(entry.get("reason", "")),
+                    str(entry.get("covered_turn_count", "")),
+                    str(entry.get("retained_turn_count", "")),
+                    preview,
+                )
+            console.print(table)
+            console.print(f"[dim]{history_path}[/dim]")
 
         if not parts:
             render_status()
@@ -261,6 +309,10 @@ def register_context_commands(registry) -> None:
             ])
             console.print(Panel(metadata, title="Compacted Summary", border_style="cyan"))
             console.print(summary.rendered_text)
+            return
+
+        if parts[0] == "history":
+            render_history()
             return
 
         if parts[0] == "now":
@@ -305,17 +357,7 @@ def register_context_commands(registry) -> None:
                     console.print(f"[dim]{line}[/dim]")
                 return
 
-            if result.error:
-                if logger is not None:
-                    logger.log_context_compaction_event(
-                        turn_id=None,
-                        stage="failed",
-                        reason=result.reason,
-                        error=result.error,
-                        **result.details,
-                    )
-                console.print(f"[yellow]Compaction used fallback summary:[/yellow] {result.error}")
-            elif logger is not None:
+            if logger is not None:
                 logger.log_context_compaction_event(
                     turn_id=None,
                     stage="completed",
@@ -326,8 +368,27 @@ def register_context_commands(registry) -> None:
                     after_tokens=result.after_tokens,
                     **result.details,
                 )
+                summary = session_context.get_summary()
+                if summary is not None:
+                    logger.record_compaction_snapshot(
+                        timestamp=summary.updated_at,
+                        compaction_count=summary.compaction_count,
+                        reason=result.reason,
+                        covered_turn_count=summary.covered_turn_count,
+                        covered_message_count=summary.covered_message_count,
+                        retained_turn_count=result.retained_turn_count,
+                        before_tokens=result.before_tokens,
+                        after_tokens=result.after_tokens,
+                        used_fallback=result.used_fallback,
+                        rendered_text=summary.rendered_text,
+                        payload=summary.payload,
+                    )
 
             render_manual_steps(plan_preview, result.details, result)
+            if result.used_fallback and result.details.get("fallback_error"):
+                console.print(
+                    f"[yellow]Compaction used fallback handoff:[/yellow] {result.details['fallback_error']}"
+                )
             console.print(
                 "[green]Context compacted:[/green] "
                 f"{result.covered_turn_count} turns summarized, "

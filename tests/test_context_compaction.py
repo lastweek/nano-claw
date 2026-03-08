@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 from src.agent import Agent
+from src.agent_compaction import run_auto_compaction_if_needed
 from src.config import Config
 from src.context import Context
 from src.context_compaction import ContextCompactionManager, ContextCompactionPolicy
+from src.memory import SessionMemory
 from src.tools import ToolRegistry
 
 
@@ -22,18 +25,19 @@ class StubLLM:
 
     def __init__(self, content: str = None, *, error: Exception | None = None):
         self.content = (
-            "Conversation summary for earlier turns:\n\n"
-            "## Goal\n"
-            "- Keep the session moving\n\n"
-            "## Instructions\n"
-            "- none\n\n"
-            "## Discoveries\n"
-            "- Repo uses session logging\n\n"
-            "## Accomplished\n"
-            "- Reviewed the current implementation\n\n"
-            "## Relevant files / directories\n"
-            "- src/agent.py (message assembly lives here)\n\n"
-            "This summary replaces older raw turns. Prefer recent raw turns if they conflict."
+            json.dumps(
+                {
+                    "goal": ["Keep the session moving"],
+                    "active_work": ["Review the current implementation"],
+                    "important_decisions_in_effect": ["Prefer recent raw turns if they conflict."],
+                    "key_discoveries": ["Repo uses session logging"],
+                    "completed_work": ["Reviewed the current implementation"],
+                    "working_set_files": ["src/agent.py"],
+                    "open_loops": ["none"],
+                    "next_steps": ["Continue the task"],
+                    "risks_or_blockers": ["none"],
+                }
+            )
         ) if content is None else content
         self.error = error
         self.calls = []
@@ -65,19 +69,18 @@ class AgentCompactionLLM:
                 raise RuntimeError("compaction summarizer failed")
             return {
                 "role": "assistant",
-                "content": (
-                    "Conversation summary for earlier turns:\n\n"
-                    "## Goal\n"
-                    "- Continue the task\n\n"
-                    "## Instructions\n"
-                    "- none\n\n"
-                    "## Discoveries\n"
-                    "- none\n\n"
-                    "## Accomplished\n"
-                    "- Summarized older turns\n\n"
-                    "## Relevant files / directories\n"
-                    "- none\n\n"
-                    "This summary replaces older raw turns. Prefer recent raw turns if they conflict."
+                "content": json.dumps(
+                    {
+                        "goal": ["Continue the task"],
+                        "active_work": ["Summarize older turns"],
+                        "important_decisions_in_effect": ["none"],
+                        "key_discoveries": ["none"],
+                        "completed_work": ["Summarized older turns"],
+                        "working_set_files": ["none"],
+                        "open_loops": ["none"],
+                        "next_steps": ["Continue"],
+                        "risks_or_blockers": ["none"],
+                    }
                 ),
             }, SimpleNamespace(iteration=None)
 
@@ -130,6 +133,12 @@ class DummyAgent:
         return ""
 
 
+def add_turn(context: Context, user_message: str, assistant_message: str) -> None:
+    """Append one complete user/assistant turn."""
+    context.add_message("user", user_message)
+    context.add_message("assistant", assistant_message)
+
+
 def add_turns(context: Context, count: int, *, size: int = 80) -> None:
     """Append complete user/assistant turns to the context."""
     for index in range(count):
@@ -162,6 +171,47 @@ def build_manager(temp_dir, monkeypatch, *, context_window, min_recent_turns=6, 
         ),
     )
     return cfg, context, agent, manager
+
+
+def build_agent_with_logging(
+    temp_dir,
+    monkeypatch,
+    *,
+    context_window: int,
+    min_recent_turns: int = 2,
+    debug: bool = False,
+):
+    """Build a real agent with logging enabled for compaction history tests."""
+    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    if debug:
+        monkeypatch.setenv("MEMORY_DEBUG", "1")
+    else:
+        monkeypatch.delenv("MEMORY_DEBUG", raising=False)
+    cfg = Config.reload()
+    cfg.logging.enabled = True
+    cfg.logging.async_mode = False
+    cfg.logging.log_dir = str(temp_dir / "sessions")
+    cfg.llm.context_window = context_window
+    cfg.context.auto_compact = True
+    cfg.context.auto_compact_threshold = 0.85
+    cfg.context.target_usage_after_compaction = 0.60
+    cfg.context.min_recent_turns = min_recent_turns
+    cfg.memory.enabled = True
+    cfg.memory.root_dir = str(temp_dir / "sessions")
+    cfg.memory.debug = debug
+
+    context = Context.create(cwd=str(temp_dir))
+    context.session_id = "sess_flush"
+    llm = AgentCompactionLLM()
+    memory_store = SessionMemory(repo_root=temp_dir, runtime_config=cfg)
+    agent = Agent(
+        llm,
+        ToolRegistry(),
+        context,
+        runtime_config=cfg,
+        memory_store=memory_store,
+    )
+    return cfg, context, agent, memory_store
 
 
 def test_no_compaction_below_threshold(temp_dir, monkeypatch):
@@ -253,23 +303,66 @@ def test_compaction_keeps_most_recent_turns_raw(temp_dir, monkeypatch):
     assert context.get_summary().covered_turn_count == 2
 
 
-def test_freeform_summary_is_stored_as_is(temp_dir, monkeypatch):
-    """Freeform summary output should be stored without JSON parsing."""
-    summary_text = (
-        "Conversation summary for earlier turns:\n\n"
-        "## Goal\n"
-        "- Test freeform summary\n\n"
-        "## Instructions\n"
-        "- none\n\n"
-        "## Discoveries\n"
-        "- none\n\n"
-        "## Accomplished\n"
-        "- none\n\n"
-        "## Relevant files / directories\n"
-        "- none\n\n"
-        "This summary replaces older raw turns. Prefer recent raw turns if they conflict."
+def test_auto_compaction_writes_compaction_history_snapshot(temp_dir, monkeypatch):
+    """Auto compaction should append a structured handoff snapshot to the session history ledger."""
+    _, context, agent, _memory_store = build_agent_with_logging(
+        temp_dir,
+        monkeypatch,
+        context_window=400,
+        min_recent_turns=2,
     )
-    llm = StubLLM(content=summary_text)
+    add_turns(context, 6, size=120)
+
+    seen_events = []
+    run_auto_compaction_if_needed(agent, turn_id=7, on_event=lambda event: seen_events.append(event.kind))
+
+    session_dir = agent.logger.ensure_session_dir()
+    history_path = session_dir / "compaction-history.jsonl"
+    entries = [json.loads(line) for line in history_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    assert context.get_summary() is not None
+    assert entries and len(entries) == 1
+    assert entries[0]["reason"] == "threshold_reached"
+    assert "payload" in entries[0]
+    assert entries[0]["rendered_text"].startswith("Session handoff for earlier turns:")
+    assert "context_compaction_started" in seen_events
+    assert "context_compaction_completed" in seen_events
+
+
+def test_auto_compaction_skipped_does_not_write_compaction_history(temp_dir, monkeypatch):
+    """Skipped auto compaction should not append a history snapshot."""
+    _, context, agent, _memory_store = build_agent_with_logging(
+        temp_dir,
+        monkeypatch,
+        context_window=100_000,
+        min_recent_turns=2,
+    )
+    add_turns(context, 2, size=10)
+
+    seen_events = []
+    run_auto_compaction_if_needed(agent, turn_id=8, on_event=lambda event: seen_events.append(event.kind))
+
+    session_dir = agent.logger.ensure_session_dir()
+    history_path = session_dir / "compaction-history.jsonl"
+    if history_path.exists():
+        assert history_path.read_text(encoding="utf-8").strip() == ""
+    assert "context_compaction_started" not in seen_events
+
+
+def test_structured_handoff_is_rendered_deterministically(temp_dir, monkeypatch):
+    """Structured handoff JSON should be parsed and rendered into the stable handoff text."""
+    payload = {
+        "goal": ["Test structured handoff"],
+        "active_work": ["Keep working through the bug"],
+        "important_decisions_in_effect": ["Use Ruff"],
+        "key_discoveries": ["none"],
+        "completed_work": ["none"],
+        "working_set_files": ["src/context_compaction.py"],
+        "open_loops": ["Investigate one failing test"],
+        "next_steps": ["Run targeted pytest"],
+        "risks_or_blockers": ["none"],
+    }
+    llm = StubLLM(content=json.dumps(payload))
     _, context, agent, manager = build_manager(
         temp_dir,
         monkeypatch,
@@ -283,7 +376,9 @@ def test_freeform_summary_is_stored_as_is(temp_dir, monkeypatch):
 
     assert result.status == "compacted"
     assert context.get_summary() is not None
-    assert context.get_summary().rendered_text == summary_text
+    assert context.get_summary().payload["goal"] == ["Test structured handoff"]
+    assert context.get_summary().rendered_text.startswith("Session handoff for earlier turns:")
+    assert "## Active work" in context.get_summary().rendered_text
 
 
 def test_compaction_enforces_summary_boundary_in_prompt(temp_dir, monkeypatch):
@@ -347,7 +442,7 @@ def test_malformed_tail_is_preserved(temp_dir, monkeypatch):
 
 
 def test_fallback_summary_path_on_invalid_output(temp_dir, monkeypatch):
-    """Invalid summarizer output should fall back to a deterministic emergency summary."""
+    """Invalid summarizer output should fall back to a deterministic structured handoff."""
     llm = StubLLM(error=RuntimeError("boom"))
     _, context, agent, manager = build_manager(
         temp_dir,
@@ -361,8 +456,11 @@ def test_fallback_summary_path_on_invalid_output(temp_dir, monkeypatch):
     result = manager.compact_now(agent, "manual_command", force=True)
 
     assert result.status == "compacted"
-    assert result.error is not None
-    assert "Fallback summary generated" in context.get_summary().rendered_text
+    assert result.used_fallback is True
+    assert result.error is None
+    assert result.details["fallback_error"] == "boom"
+    assert context.get_summary().rendered_text.startswith("Session handoff for earlier turns:")
+    assert "Fallback handoff generated because structured compaction summarization failed." in context.get_summary().rendered_text
 
 
 def test_auto_compaction_skipped_when_context_window_unknown(temp_dir, monkeypatch):
@@ -407,7 +505,7 @@ def test_agent_run_auto_compacts_before_first_normal_call(temp_dir, monkeypatch)
     assert response == "final answer"
     assert llm.calls[0]["log_context"]["request_kind"] == "context_compaction"
     assert llm.calls[1]["log_context"]["request_kind"] == "agent_turn"
-    assert "Conversation summary for earlier turns:" in llm.calls[1]["messages"][1]["content"]
+    assert "Session handoff for earlier turns:" in llm.calls[1]["messages"][1]["content"]
     assert [event.kind for event in events[:3]] == [
         "context_compaction_started",
         "context_compaction_completed",
@@ -437,8 +535,8 @@ def test_agent_run_stream_auto_compacts_before_streaming(temp_dir, monkeypatch):
     assert any(event.kind == "context_compaction_completed" for event in events)
 
 
-def test_agent_compaction_failure_falls_back_and_turn_continues(temp_dir, monkeypatch):
-    """Fallback summaries should still let the turn proceed when summarization output is invalid."""
+def test_agent_compaction_fallback_still_completes_and_turn_continues(temp_dir, monkeypatch):
+    """Fallback handoffs should still let the turn proceed and emit a completed compaction event."""
     monkeypatch.setenv("NANO_CODER_TEST", "true")
     cfg = Config.reload()
     cfg.logging.enabled = False
@@ -454,6 +552,7 @@ def test_agent_compaction_failure_falls_back_and_turn_continues(temp_dir, monkey
     response = agent.run("continue", on_event=lambda event: events.append(event))
 
     assert response == "final answer"
-    assert any(event.kind == "context_compaction_failed" for event in events)
+    assert any(event.kind == "context_compaction_completed" for event in events)
+    assert all(event.kind != "context_compaction_failed" for event in events)
     assert context.get_summary() is not None
-    assert "Fallback summary generated" in context.get_summary().rendered_text
+    assert "Fallback handoff generated because structured compaction summarization failed." in context.get_summary().rendered_text

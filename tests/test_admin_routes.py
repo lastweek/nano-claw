@@ -87,7 +87,10 @@ def test_admin_overview_and_resource_endpoints(temp_dir, http_runtime_config, pa
             session["id"],
             turn_id="turn_demo",
             query="deploy",
-            entry_ids=[memory_entry.entry_id],
+            policy_name="curated_plus_recent_daily",
+            items=[
+                app.state.memory_store.build_prompt_memory(session["id"], "deploy").items[0],
+            ],
         )
         turn = client.post(
             f"/api/v1/sessions/{session['id']}/turns",
@@ -157,6 +160,9 @@ def test_admin_overview_and_resource_endpoints(temp_dir, http_runtime_config, pa
         memory_settings = client.get(f"/api/v1/admin/memory/settings?session_id={session['id']}").json()
         assert memory_settings["kind"] == "SessionMemorySettings"
         assert memory_settings["status"]["mode"] == "manual_only"
+        assert memory_settings["status"]["read_policy"] == "curated_plus_recent_daily"
+        assert memory_settings["status"]["prompt_policy"] == "curated_plus_recent_daily"
+        assert memory_settings["status"]["debug_enabled"] is False
 
         memory_audit = client.get(f"/api/v1/admin/memory/audit?session_id={session['id']}").json()
         assert memory_audit["kind"] == "SessionMemoryAuditEventList"

@@ -12,6 +12,7 @@ def test_server_defaults(monkeypatch):
     monkeypatch.delenv("SERVER_MAX_PARALLEL_RUNS", raising=False)
     monkeypatch.delenv("SERVER_SERVE_UI", raising=False)
     monkeypatch.delenv("SERVER_SSE_HEARTBEAT_SECONDS", raising=False)
+    monkeypatch.delenv("MEMORY_DEBUG", raising=False)
     monkeypatch.delenv("MACOS_TOOLS_ENABLED", raising=False)
     monkeypatch.delenv("MACOS_TOOLS_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("MACOS_TOOLS_ENABLE_FINDER", raising=False)
@@ -30,9 +31,15 @@ def test_server_defaults(monkeypatch):
     assert runtime_config.server.sse_heartbeat_seconds == 10
     assert runtime_config.memory.enabled is True
     assert runtime_config.memory.root_dir == "~/.nano-claw/sessions"
+    assert runtime_config.memory.debug is False
     assert runtime_config.memory.auto_load_memory is True
     assert runtime_config.memory.max_auto_chars == 4000
     assert runtime_config.memory.max_search_results == 10
+    assert runtime_config.memory.default_read_policy == "curated_plus_recent_daily"
+    assert runtime_config.memory.default_prompt_policy == "curated_plus_recent_daily"
+    assert runtime_config.memory.recent_daily_days == 2
+    assert runtime_config.memory.max_auto_curated_hits == 3
+    assert runtime_config.memory.max_auto_daily_hits == 2
     assert runtime_config.macos_tools.enabled is True
     assert runtime_config.macos_tools.timeout_seconds == 10
     assert runtime_config.macos_tools.enable_finder is True
@@ -52,9 +59,15 @@ def test_server_env_overrides(monkeypatch):
     monkeypatch.setenv("SERVER_SSE_HEARTBEAT_SECONDS", "4")
     monkeypatch.setenv("MEMORY_ENABLED", "true")
     monkeypatch.setenv("MEMORY_ROOT_DIR", "tmp/memory")
+    monkeypatch.setenv("MEMORY_DEBUG", "true")
     monkeypatch.setenv("MEMORY_AUTO_LOAD_MEMORY", "false")
     monkeypatch.setenv("MEMORY_MAX_AUTO_CHARS", "1024")
     monkeypatch.setenv("MEMORY_MAX_SEARCH_RESULTS", "5")
+    monkeypatch.setenv("MEMORY_DEFAULT_READ_POLICY", "curated_only")
+    monkeypatch.setenv("MEMORY_DEFAULT_PROMPT_POLICY", "search_all_ranked")
+    monkeypatch.setenv("MEMORY_RECENT_DAILY_DAYS", "4")
+    monkeypatch.setenv("MEMORY_MAX_AUTO_CURATED_HITS", "2")
+    monkeypatch.setenv("MEMORY_MAX_AUTO_DAILY_HITS", "1")
     monkeypatch.setenv("MACOS_TOOLS_ENABLED", "true")
     monkeypatch.setenv("MACOS_TOOLS_TIMEOUT_SECONDS", "15")
     monkeypatch.setenv("MACOS_TOOLS_ENABLE_CALENDAR", "false")
@@ -70,9 +83,15 @@ def test_server_env_overrides(monkeypatch):
     assert runtime_config.server.sse_heartbeat_seconds == 4
     assert runtime_config.memory.enabled is True
     assert runtime_config.memory.root_dir == "tmp/memory"
+    assert runtime_config.memory.debug is True
     assert runtime_config.memory.auto_load_memory is False
     assert runtime_config.memory.max_auto_chars == 1024
     assert runtime_config.memory.max_search_results == 5
+    assert runtime_config.memory.default_read_policy == "curated_only"
+    assert runtime_config.memory.default_prompt_policy == "search_all_ranked"
+    assert runtime_config.memory.recent_daily_days == 4
+    assert runtime_config.memory.max_auto_curated_hits == 2
+    assert runtime_config.memory.max_auto_daily_hits == 1
     assert runtime_config.macos_tools.enabled is True
     assert runtime_config.macos_tools.timeout_seconds == 15
     assert runtime_config.macos_tools.enable_calendar is False
