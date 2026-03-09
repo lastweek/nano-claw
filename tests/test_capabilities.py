@@ -33,7 +33,7 @@ def build_capability_config(temp_dir: Path, **overrides) -> Config:
         "extensions": {
             "enabled": True,
             "user_root": str(temp_dir / "user-extensions"),
-            "repo_root": ".nano-claw/extensions",
+            "repo_root": ".babyclaw/extensions",
             "runner_timeout_seconds": 1,
             "install_timeout_seconds": 5,
             "catalogs": [],
@@ -172,13 +172,13 @@ def test_capability_inventory_search_matches_active_and_skill_states(temp_dir):
     repo_root = temp_dir / "repo"
     runtime_config = build_capability_config(temp_dir)
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "terraform",
+        repo_root / ".babyclaw" / "skills" / "terraform",
         name="terraform",
         description="Terraform workflows",
         body="Use terraform plan first.",
     )
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        repo_root / ".babyclaw" / "skills" / "macos-finder",
         name="macos-finder",
         description="Finder helper",
         body="Use finder_action.",
@@ -224,7 +224,7 @@ def test_capability_inventory_search_matches_reload_required_and_catalog_package
         extensions={
             "enabled": True,
             "user_root": str(temp_dir / "user-extensions"),
-            "repo_root": ".nano-claw/extensions",
+            "repo_root": ".babyclaw/extensions",
             "runner_timeout_seconds": 1,
             "install_timeout_seconds": 5,
             "catalogs": [{"name": "curated", "url": "https://catalog.example/extensions.json"}],
@@ -234,7 +234,7 @@ def test_capability_inventory_search_matches_reload_required_and_catalog_package
     skill_manager.discover()
     inventory = CapabilityInventory(repo_root=repo_root, runtime_config=runtime_config)
 
-    write_extension_bundle(repo_root / ".nano-claw" / "extensions", name="browser-tools", tool_name="browser_open")
+    write_extension_bundle(repo_root / ".babyclaw" / "extensions", name="browser-tools", tool_name="browser_open")
 
     class FakeResponse:
         text = json.dumps(

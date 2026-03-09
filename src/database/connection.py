@@ -10,8 +10,8 @@ from typing import Iterator
 
 from src.database.migrations import apply_schema_migrations
 
-DEFAULT_HTTP_DATABASE_PATH = "~/.nano-claw/state.db"
-LEGACY_HTTP_DATABASE_PATH = ".nano-claw/state.db"
+DEFAULT_HTTP_DATABASE_PATH = "~/.babyclaw/state.db"
+LEGACY_HTTP_DATABASE_PATH = ".babyclaw/state.db"
 DB_ARTIFACT_SUFFIXES = ("", "-wal", "-shm")
 
 SCHEMA_STATEMENTS = (

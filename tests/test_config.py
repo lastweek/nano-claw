@@ -24,19 +24,19 @@ class TestConfigDefaults:
         """Test logging config default values."""
         monkeypatch.delenv("ENABLE_LOGGING", raising=False)
         monkeypatch.delenv("ASYNC_LOGGING", raising=False)
-        monkeypatch.delenv("NANO_CODER_TEST", raising=False)
-        monkeypatch.delenv("NANO_CLAW_TEST_ROOT", raising=False)
+        monkeypatch.delenv("BABYCLAW_TEST", raising=False)
+        monkeypatch.delenv("BABYCLAW_TEST_ROOT", raising=False)
         config = Config()
         assert config.logging.enabled is True
         assert config.logging.async_mode is False
-        assert config.logging.log_dir == "~/.nano-claw/sessions"
+        assert config.logging.log_dir == "~/.babyclaw/sessions"
         assert config.logging.buffer_size == 10
 
     def test_test_mode_redirects_default_runtime_paths(self, monkeypatch, temp_dir):
-        """Default runtime state should stay out of ~/.nano-claw during tests."""
+        """Default runtime state should stay out of ~/.babyclaw during tests."""
         test_root = (temp_dir / "runtime").resolve()
-        monkeypatch.setenv("NANO_CODER_TEST", "true")
-        monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+        monkeypatch.setenv("BABYCLAW_TEST", "true")
+        monkeypatch.setenv("BABYCLAW_TEST_ROOT", str(test_root))
         monkeypatch.delenv("LOG_DIR", raising=False)
         monkeypatch.delenv("MEMORY_ROOT_DIR", raising=False)
         monkeypatch.delenv("SERVER_DB_PATH", raising=False)
@@ -76,7 +76,7 @@ class TestConfigDefaults:
         monkeypatch.delenv("PLAN_ENABLED", raising=False)
         config = Config()
         assert config.plan.enabled is True
-        assert config.plan.plan_dir == ".nano-claw/plans"
+        assert config.plan.plan_dir == ".babyclaw/plans"
         assert config.plan.allow_subagents is True
 
     def test_macos_tools_defaults(self, monkeypatch):
@@ -119,8 +119,8 @@ class TestConfigDefaults:
 
     def test_extensions_defaults(self, monkeypatch):
         """Test runtime extension config defaults."""
-        monkeypatch.delenv("NANO_CODER_TEST", raising=False)
-        monkeypatch.delenv("NANO_CLAW_TEST_ROOT", raising=False)
+        monkeypatch.delenv("BABYCLAW_TEST", raising=False)
+        monkeypatch.delenv("BABYCLAW_TEST_ROOT", raising=False)
         monkeypatch.delenv("EXTENSIONS_ENABLED", raising=False)
         monkeypatch.delenv("EXTENSIONS_USER_ROOT", raising=False)
         monkeypatch.delenv("EXTENSIONS_REPO_ROOT", raising=False)
@@ -128,8 +128,8 @@ class TestConfigDefaults:
         monkeypatch.delenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", raising=False)
         config = Config()
         assert config.extensions.enabled is True
-        assert config.extensions.user_root == "~/.nano-claw/extensions"
-        assert config.extensions.repo_root == ".nano-claw/extensions"
+        assert config.extensions.user_root == "~/.babyclaw/extensions"
+        assert config.extensions.repo_root == ".babyclaw/extensions"
         assert config.extensions.runner_timeout_seconds == 60
         assert config.extensions.install_timeout_seconds == 30
         assert config.extensions.catalogs == []
@@ -299,13 +299,13 @@ class TestConfigEnvOverrides:
         """Test EXTENSIONS_* env variable overrides."""
         monkeypatch.setenv("EXTENSIONS_ENABLED", "false")
         monkeypatch.setenv("EXTENSIONS_USER_ROOT", "/tmp/extensions-user")
-        monkeypatch.setenv("EXTENSIONS_REPO_ROOT", ".nano-claw/custom-extensions")
+        monkeypatch.setenv("EXTENSIONS_REPO_ROOT", ".babyclaw/custom-extensions")
         monkeypatch.setenv("EXTENSIONS_RUNNER_TIMEOUT_SECONDS", "99")
         monkeypatch.setenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", "44")
         config = Config()
         assert config.extensions.enabled is False
         assert config.extensions.user_root == "/tmp/extensions-user"
-        assert config.extensions.repo_root == ".nano-claw/custom-extensions"
+        assert config.extensions.repo_root == ".babyclaw/custom-extensions"
         assert config.extensions.runner_timeout_seconds == 99
         assert config.extensions.install_timeout_seconds == 44
 

@@ -1,4 +1,4 @@
-"""Slash command system for nano-claw meta-commands."""
+"""Slash command system for babyclaw meta-commands."""
 
 from __future__ import annotations
 

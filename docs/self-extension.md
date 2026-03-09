@@ -2,7 +2,7 @@
 
 ## Abstract
 
-The nano-claw self-extension subsystem enables runtime-discoverable tool bundles to be added, reloaded, and managed without restarting the process. This system provides a powerful plugin architecture where extensions can export tools, integrate skills, and be installed from curated catalogs—all while maintaining process isolation through out-of-process execution.
+The BabyClaw self-extension subsystem enables runtime-discoverable tool bundles to be added, reloaded, and managed without restarting the process. This system provides a powerful plugin architecture where extensions can export tools, integrate skills, and be installed from curated catalogs—all while maintaining process isolation through out-of-process execution.
 
 ## Table of Contents
 
@@ -206,8 +206,8 @@ The skill discovery system automatically tags these skills with extension metada
 
 Extensions are discovered from two configurable roots:
 
-1. **User Root** (`~/.nano-claw/extensions`): User-local extensions shared across all repositories
-2. **Repo Root** (`.nano-claw/extensions`): Repository-specific extensions
+1. **User Root** (`~/.babyclaw/extensions`): User-local extensions shared across all repositories
+2. **Repo Root** (`.babyclaw/extensions`): Repository-specific extensions
 
 ```mermaid
 graph LR
@@ -418,16 +418,16 @@ RuntimeRefreshOutcome(
 # config.yaml
 extensions:
   enabled: true
-  user_root: ~/.nano-claw/extensions
-  repo_root: .nano-claw/extensions
+  user_root: ~/.babyclaw/extensions
+  repo_root: .babyclaw/extensions
   runner_timeout_seconds: 60
   install_timeout_seconds: 30
   catalogs:
     - name: official
-      url: https://nano-claw.dev/extensions/catalog.json
+      url: https://babyclaw.dev/extensions/catalog.json
       enabled: true
     - name: community
-      url: https://github.com/nano-claw/community-extensions
+      url: https://github.com/babyclaw/community-extensions
       enabled: false
 ```
 
@@ -436,8 +436,8 @@ extensions:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | boolean | `true` | Master enable switch for extensions |
-| `user_root` | string | `~/.nano-claw/extensions` | User-local extension directory |
-| `repo_root` | string | `.nano-claw/extensions` | Repository-local extension directory |
+| `user_root` | string | `~/.babyclaw/extensions` | User-local extension directory |
+| `repo_root` | string | `.babyclaw/extensions` | Repository-local extension directory |
 | `runner_timeout_seconds` | integer | `60` | Timeout for extension tool execution |
 | `install_timeout_seconds` | integer | `30` | Timeout for catalog downloads |
 | `catalogs` | array | `[]` | Configured extension catalogs |
@@ -447,7 +447,7 @@ extensions:
 ```yaml
 catalogs:
   - name: official
-    url: https://nano-claw.dev/extensions/catalog.json
+    url: https://babyclaw.dev/extensions/catalog.json
     enabled: true
 ```
 
@@ -459,7 +459,7 @@ Catalog files use JSON or YAML format:
     {
       "name": "web-tools",
       "version": "1.0.0",
-      "archive_url": "https://nano-claw.dev/extensions/web-tools-1.0.0.tar.gz",
+      "archive_url": "https://babyclaw.dev/extensions/web-tools-1.0.0.tar.gz",
       "sha256": "abc123...",
       "bundle_root": "web-tools",
       "description": "Web scraping and URL analysis tools"
@@ -970,7 +970,7 @@ tools:
 {
   "name": "web-tools",
   "version": "1.0.0",
-  "archive_url": "https://github.com/nano-claw/web-tools/archive/v1.0.0.tar.gz",
+  "archive_url": "https://github.com/babyclaw/web-tools/archive/v1.0.0.tar.gz",
   "sha256": "a1b2c3d4e5f6...",
   "bundle_root": "web-tools-1.0.0",
   "description": "Web scraping and URL analysis tools including fetch_url, extract_links, and analyze_html"
@@ -1015,8 +1015,8 @@ sequenceDiagram
     EM->>EM: Verify SHA256
     EM->>FS: Extract to temp
     EM->>FS: Validate EXTENSION.yaml
-    EM->>FS: Copy to ~/.nano-claw/extensions/.web-tools.staged
-    EM->>FS: Move to ~/.nano-claw/extensions/web-tools
+    EM->>FS: Copy to ~/.babyclaw/extensions/.web-tools.staged
+    EM->>FS: Move to ~/.babyclaw/extensions/web-tools
     EM->>EM: discover()
     EM-->>CLI: Install result
     CLI-->>User: Installed. Run /runtime reload
@@ -1042,4 +1042,4 @@ stateDiagram-v2
 
 *Document Version: 1.0.0*
 *Last Updated: 2026-03-09*
-*Maintained by: nano-claw development team*
+*Maintained by: babyclaw development team*

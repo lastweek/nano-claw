@@ -1,4 +1,4 @@
-# nano-claw HTTP Design (Session-Scoped Agents)
+# BabyClaw HTTP Design (Session-Scoped Agents)
 
 ## Overview
 

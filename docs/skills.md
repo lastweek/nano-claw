@@ -1,8 +1,8 @@
-# nano-claw Skill System
+# BabyClaw Skill System
 
 ## Abstract
 
-The nano-claw Skill System provides a modular, extensible mechanism for discovering, loading, and applying domain-specific expertise to AI agent operations. Skills are Codex-style knowledge bundles that encapsulate specialized instructions, workflows, and resources without hardcoding domain logic into the agent core. This document describes the architecture, components, and operational patterns of the skill system.
+The BabyClaw Skill System provides a modular, extensible mechanism for discovering, loading, and applying domain-specific expertise to AI agent operations. Skills are Codex-style knowledge bundles that encapsulate specialized instructions, workflows, and resources without hardcoding domain logic into the agent core. This document describes the architecture, components, and operational patterns of the skill system.
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ Skills address these challenges by:
 4. **Multi-source discovery** from both repository-local and user-global skill directories
 5. **Explicit activation** through user-controlled syntax rather than implicit inference
 
-This design enables nano-claw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles.
+This design enables babyclaw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles.
 
 ---
 
@@ -53,8 +53,8 @@ This design enables nano-claw to maintain a small, focused core while supporting
 graph TB
     subgraph "Discovery Phase"
         SM[SkillManager]
-        SR1[Repo Skills: .nano-claw/skills/]
-        SR2[User Skills: ~/.nano-claw/skills/]
+        SR1[Repo Skills: .babyclaw/skills/]
+        SR2[User Skills: ~/.babyclaw/skills/]
         SM --> SR1
         SM --> SR2
     end
@@ -116,8 +116,8 @@ sequenceDiagram
     participant Context
 
     Note over SkillManager,Context: Discovery Phase (Startup)
-    SkillManager->>SkillManager: Scan .nano-claw/skills/
-    SkillManager->>SkillManager: Scan ~/.nano-claw/skills/
+    SkillManager->>SkillManager: Scan .babyclaw/skills/
+    SkillManager->>SkillManager: Scan ~/.babyclaw/skills/
     SkillManager->>SkillManager: Parse SKILL.md files
     SkillManager-->>CLI: Return discovered skills
 
@@ -146,7 +146,7 @@ sequenceDiagram
 
 `SkillSpec` is a dataclass representing a discovered skill bundle with all metadata and resources.
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/skills.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/skills.py`
 
 **Attributes**:
 - `name: str` - Unique identifier for the skill
@@ -174,8 +174,8 @@ skill = SkillSpec(
     description="Handle PDF workflows with visual checks",
     short_description="PDF workflows",
     body="Prefer visual PDF verification over text extraction...",
-    root_dir=Path("/repo/.nano-claw/skills/pdf"),
-    skill_file=Path("/repo/.nano-claw/skills/pdf/SKILL.md"),
+    root_dir=Path("/repo/.babyclaw/skills/pdf"),
+    skill_file=Path("/repo/.babyclaw/skills/pdf/SKILL.md"),
     source="repo",
     catalog_visible=True,
     scripts=[],
@@ -188,14 +188,14 @@ skill = SkillSpec(
 
 `SkillManager` orchestrates skill discovery, parsing, and formatting for agent consumption.
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/skills.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/skills.py`
 
 **Key Methods**:
 
 #### `__init__(repo_root, user_root)`
 Initializes the manager with two discovery roots:
-- `repo_root`: Project repository (defaults to cwd), scans `.nano-claw/skills/`
-- `user_root`: User home directory (defaults to `~/.nano-claw/skills`)
+- `repo_root`: Project repository (defaults to cwd), scans `.babyclaw/skills/`
+- `user_root`: User home directory (defaults to `~/.babyclaw/skills`)
 
 #### `discover() -> List[str]`
 Scans both roots recursively for `SKILL.md` files and returns warnings.
@@ -286,7 +286,7 @@ Use read_file to inspect resource files as needed. Do not assume bundled scripts
 
 `LoadSkillTool` exposes skill loading to the agent through the tool interface.
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/tools/skill.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/tools/skill.py`
 
 **Tool Schema**:
 - `name`: "load_skill"
@@ -316,7 +316,7 @@ Dataclass returned by `extract_skill_mentions`.
 ### Directory Layout
 
 ```
-.nano-claw/skills/
+.babyclaw/skills/
 └── {skill-name}/
     ├── SKILL.md           # Required: Skill definition
     ├── scripts/           # Optional: Executable scripts or code samples
@@ -378,7 +378,7 @@ Ineligible skills remain discoverable in `/skill`, but they are excluded from th
 Repo-local macOS app skills can gate individual helpers like `macos_tools.enable_reminders` or `macos_tools.enable_messages` the same way.
 Skills can also describe hybrid workflows that combine built-in tools with MCP. For example, the repo-local `web-research` skill teaches the agent to use an MCP search provider to find candidate URLs and then use the built-in `read_webpage`, `fetch_url`, and `extract_page_links` tools to inspect the public web.
 Extension bundles can also ship `skills/` directories. Once discovered, those skills behave like normal repo/user skills, keep their eligibility gates, and surface extension provenance in admin/runtime snapshots.
-Use `/runtime reload`, `/extension reload`, or `refresh_runtime_capabilities` after adding a new bundle so the current session picks up the new tools and bundled skills without restarting nano-claw.
+Use `/runtime reload`, `/extension reload`, or `refresh_runtime_capabilities` after adding a new bundle so the current session picks up the new tools and bundled skills without restarting babyclaw.
 When the agent realizes it is missing a capability, it should first use `find_capabilities`. If it finds an exact loadable skill, it should call `load_skill`; if it finds an on-disk bundle or installable catalog package, it should record that with `request_capability` and tell the user the exact reload/install step.
   - Used as the key for `$skill-name` mentions
   - Must be unique across repo and user skills
@@ -476,7 +476,7 @@ Warnings are emitted for:
 ```python
 manager = SkillManager(
     repo_root=Path("/my-project"),
-    user_root=Path.home() / ".nano-claw" / "skills"
+    user_root=Path.home() / ".babyclaw" / "skills"
 )
 warnings = manager.discover()
 
@@ -604,7 +604,7 @@ agent_call = {
 
 The `Context` class tracks active skills:
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/context.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/context.py`
 
 **Methods**:
 - `activate_skill(name: str)` - Add skill to active list
@@ -621,7 +621,7 @@ class Context:
 
 ### Agent Integration
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/agent.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/agent.py`
 
 **Turn Initialization** (`_prepare_turn_inputs`):
 
@@ -653,7 +653,7 @@ messages.append({"role": "user", "content": normalized_user_message})
 
 ### Context Usage Tracking
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/context_usage.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/context_usage.py`
 
 Skills contribute to token budget estimation:
 
@@ -758,14 +758,14 @@ Available Skills (3)
 │ Description: Handle PDF workflows with visual verification              │
 │ Source: repo                                                            │
 │ Catalog Visible: yes                                                    │
-│ Skill File: /repo/.nano-claw/skills/pdf/SKILL.md                       │
+│ Skill File: /repo/.babyclaw/skills/pdf/SKILL.md                       │
 │ Body Lines: 45                                                          │
 │                                                                          │
 │ Scripts:                                                                 │
-│   - /repo/.nano-claw/skills/pdf/scripts/extract-tables.py              │
+│   - /repo/.babyclaw/skills/pdf/scripts/extract-tables.py              │
 │                                                                          │
 │ References:                                                              │
-│   - /repo/.nano-claw/skills/pdf/references/guide.md                    │
+│   - /repo/.babyclaw/skills/pdf/references/guide.md                    │
 │                                                                          │
 │ Assets:                                                                  │
 │   - none                                                                 │
@@ -869,7 +869,7 @@ Do not assume bundled scripts have already been executed.
 
 ### Token Estimation
 
-**Location**: `/Volumes/CaseSensitive/nano-claw/src/context_usage.py`
+**Location**: `/Volumes/CaseSensitive/babyclaw/src/context_usage.py`
 
 **Calculation**:
 ```python
@@ -971,7 +971,7 @@ A PDF extraction is complete when:
 
 ### Skill Organization
 
-#### Repository Skills (`.nano-claw/skills/`)
+#### Repository Skills (`.babyclaw/skills/`)
 
 **Purpose**: Project-specific or team-shared workflows
 
@@ -985,7 +985,7 @@ A PDF extraction is complete when:
 - Shared across team
 - Project-specific customization
 
-#### User Skills (`~/.nano-claw/skills/`)
+#### User Skills (`~/.babyclaw/skills/`)
 
 **Purpose**: Personal workflows and preferences
 
@@ -1046,7 +1046,7 @@ A PDF extraction is complete when:
 
 **Directory Structure**:
 ```
-.nano-claw/skills/
+.babyclaw/skills/
 └── pdf/
     └── SKILL.md
 ```
@@ -1106,7 +1106,7 @@ $pdf extract tables from report.pdf
 
 **Directory Structure**:
 ```
-.nano-claw/skills/
+.babyclaw/skills/
 └── terraform/
     ├── SKILL.md
     ├── scripts/
@@ -1213,7 +1213,7 @@ $terraform deploy the extracted configuration
 
 **Scenario**: User has a personal Terraform skill that overrides the repo's version
 
-**User skill** (`~/.nano-claw/skills/terraform/SKILL.md`):
+**User skill** (`~/.babyclaw/skills/terraform/SKILL.md`):
 ```markdown
 ---
 name: terraform
@@ -1225,7 +1225,7 @@ description: Personal Terraform preferences with auto-approval workflow
 I prefer faster iterations with auto-approval for non-prod environments.
 ```
 
-**Repo skill** (`.nano-claw/skills/terraform/SKILL.md`):
+**Repo skill** (`.babyclaw/skills/terraform/SKILL.md`):
 ```markdown
 ---
 name: terraform
@@ -1246,13 +1246,13 @@ All changes require plan review and approval.
 1. User skills discovered first (lower priority)
 2. Repo skills discovered second (higher priority)
 3. Repo skill with same name overrides user skill
-4. Warning emitted: "Duplicate skill 'terraform': /repo/.nano-claw/skills/terraform/SKILL.md overrides /user/.nano-claw/skills/terraform/SKILL.md"
+4. Warning emitted: "Duplicate skill 'terraform': /repo/.babyclaw/skills/terraform/SKILL.md overrides /user/.babyclaw/skills/terraform/SKILL.md"
 
 ### Example 5: CLI Session Flow
 
 ```bash
 # Start session
-$ nano-claw
+$ babyclaw
 
 # List available skills
 /user: /skill
@@ -1332,7 +1332,7 @@ SkillSource = Literal["repo", "user"]
 
 ## Summary
 
-The nano-claw Skill System provides:
+The BabyClaw Skill System provides:
 
 1. **Modular Expertise**: Domain knowledge encapsulated in external, versionable bundles
 2. **Just-in-Time Loading**: Skills activated via mentions or pinning, not hardcoded
@@ -1341,4 +1341,4 @@ The nano-claw Skill System provides:
 5. **Token Awareness**: Size limits and usage tracking for budget management
 6. **CLI Integration**: Rich commands for inspection, activation, and management
 
-This design enables nano-claw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles, making it suitable for diverse workflows and team conventions.
+This design enables babyclaw to maintain a small, focused core while supporting unlimited domain extensions through skill bundles, making it suitable for diverse workflows and team conventions.

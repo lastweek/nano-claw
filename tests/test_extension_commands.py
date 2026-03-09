@@ -58,10 +58,10 @@ def test_extension_commands_list_show_install_and_reload():
         version="1.2.3",
         description="Sample extension",
         install_scope="repo",
-        root_dir="/tmp/repo/.nano-claw/extensions/sample-extension",
-        manifest_file="/tmp/repo/.nano-claw/extensions/sample-extension/EXTENSION.yaml",
+        root_dir="/tmp/repo/.babyclaw/extensions/sample-extension",
+        manifest_file="/tmp/repo/.babyclaw/extensions/sample-extension/EXTENSION.yaml",
         command=("python3", "runner.py"),
-        skill_root="/tmp/repo/.nano-claw/extensions/sample-extension/skills",
+        skill_root="/tmp/repo/.babyclaw/extensions/sample-extension/skills",
         tool_specs=(SimpleNamespace(name="sample_extension_tool", description="Extension tool"),),
     )
 

@@ -1,4 +1,4 @@
-"""Context management for nano-claw."""
+"""Context management for babyclaw."""
 
 from dataclasses import dataclass, field
 from pathlib import Path

@@ -73,7 +73,7 @@ def add_turns(session_context: Context, count: int, *, size: int = 120) -> None:
 
 def create_compact_env(temp_dir, monkeypatch, *, with_memory: bool = False, logging_enabled: bool = False):
     """Build a command environment with compaction support."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     cfg = Config.reload()
     cfg.logging.enabled = logging_enabled
     cfg.logging.async_mode = False
@@ -87,7 +87,7 @@ def create_compact_env(temp_dir, monkeypatch, *, with_memory: bool = False, logg
     cfg.memory.root_dir = str(temp_dir / "sessions")
 
     repo_root = temp_dir / "repo"
-    write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
+    write_skill(repo_root / ".babyclaw" / "skills" / "pdf")
     skill_manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
     skill_manager.discover()
 

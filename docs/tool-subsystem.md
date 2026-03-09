@@ -2,7 +2,7 @@
 
 ## Abstract
 
-The Tool subsystem is the extensibility layer of nano-claw that enables AI agents to interact with external systems, execute commands, manipulate files, and delegate work to specialized sub-agents. This document provides a comprehensive technical overview of the Tool architecture, execution workflow, built-in tools, and best practices for tool development.
+The Tool subsystem is the extensibility layer of babyclaw that enables AI agents to interact with external systems, execute commands, manipulate files, and delegate work to specialized sub-agents. This document provides a comprehensive technical overview of the Tool architecture, execution workflow, built-in tools, and best practices for tool development.
 
 ## Table of Contents
 
@@ -1350,7 +1350,7 @@ The Tool subsystem is a carefully designed extensibility layer that balances:
 - **Observability**: Comprehensive logging, structured results
 - **Extensibility**: Clean abstractions for adding new tools
 
-The architecture supports nano-claw's goal of providing a capable, safe AI coding assistant while remaining maintainable and extensible for future capabilities.
+The architecture supports BabyClaw's goal of providing a capable, safe AI coding assistant while remaining maintainable and extensible for future capabilities.
 
 ### Key Takeaways
 

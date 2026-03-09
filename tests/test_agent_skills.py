@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from src.agent import Agent
-from src.config import Config, config
+from src.config import Config
 from src.context import CompactedContextSummary, Context
 from src.skills import SkillManager
 from src.tools.skill import LoadSkillTool
@@ -77,7 +77,7 @@ def test_system_prompt_includes_repo_and_user_catalog_skills(temp_dir):
     """Repo-local and user-global skills should appear in the system prompt catalog."""
     repo_root = temp_dir / "repo"
     user_root = temp_dir / "user-skills"
-    write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
+    write_skill(repo_root / ".babyclaw" / "skills" / "pdf")
     write_skill(
         user_root / "terraform",
         name="terraform",
@@ -107,7 +107,7 @@ def test_system_prompt_includes_repo_and_user_catalog_skills(temp_dir):
 def test_system_prompt_includes_missing_capability_guidance_when_tools_exist(temp_dir):
     """Capability-request guidance should appear only when the capability tools are available."""
     repo_root = temp_dir / "repo"
-    write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
+    write_skill(repo_root / ".babyclaw" / "skills" / "pdf")
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
     manager.discover()
 
@@ -132,7 +132,7 @@ def test_pinned_skills_are_preloaded_outside_system_prompt(temp_dir):
     """Pinned skills should be injected as synthetic preload messages, not system text."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Always inspect layout before edits.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -171,7 +171,7 @@ def test_summary_message_is_injected_before_pinned_skill_preloads(temp_dir):
     """Rolling summaries should be injected before raw history and pinned skill preloads."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Always inspect layout before edits.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -210,7 +210,7 @@ def test_explicit_skill_mention_preloads_and_cleans_user_message(temp_dir):
     """$skill-name should preload the skill for one turn and strip the token from history."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Use pypdf when layout is irrelevant.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -235,13 +235,13 @@ def test_ineligible_skill_mention_does_not_preload(temp_dir):
     """Explicit mentions should not preload skills that fail runtime eligibility checks."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        repo_root / ".babyclaw" / "skills" / "macos-finder",
         name="macos-finder",
         description="Finder helper",
         short_description="Finder helper",
         body="Use finder_action.",
     )
-    skill_file = repo_root / ".nano-claw" / "skills" / "macos-finder" / "SKILL.md"
+    skill_file = repo_root / ".babyclaw" / "skills" / "macos-finder" / "SKILL.md"
     skill_file.write_text(
         "---\n"
         "name: macos-finder\n"
@@ -284,7 +284,7 @@ def test_load_skill_result_is_ephemeral_and_tool_calls_stay_in_history(temp_dir)
     """Agent-loaded skills should stay in-turn only and preserve assistant tool calls."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Use pypdf when layout is irrelevant.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -338,7 +338,7 @@ def test_skill_event_callback_reports_preloads_and_tool_loads(temp_dir):
     """Skill debug callback should receive explicit preloads and real tool loads."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Prefer visual PDF checks.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -376,7 +376,7 @@ def test_skill_event_callback_reports_preloads_and_tool_loads(temp_dir):
         "reason": "explicit",
         "source": "repo",
         "catalog_visible": True,
-        "skill_file": str((repo_root / ".nano-claw" / "skills" / "pdf" / "SKILL.md").resolve()),
+        "skill_file": str((repo_root / ".babyclaw" / "skills" / "pdf" / "SKILL.md").resolve()),
     }) in events
     assert ("tool_load_requested", {"skill_name": "pdf", "iteration": 0}) in events
     assert ("tool_load_succeeded", {"skill_name": "pdf", "iteration": 0}) in events
@@ -386,7 +386,7 @@ def test_activity_events_report_preloads_and_tool_lifecycle(temp_dir):
     """Agent should emit user-safe activity events for the CLI timeline."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Prefer visual PDF checks.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -437,11 +437,21 @@ def test_activity_events_report_preloads_and_tool_lifecycle(temp_dir):
 
 def test_llm_log_includes_inline_skill_and_tool_timeline(temp_dir, monkeypatch):
     """llm.log should inline skill and tool activity in chronological order."""
-    monkeypatch.setattr(config.logging, "log_dir", str(temp_dir / "logs"))
+    runtime_config = Config(
+        {
+            "logging": {
+                "enabled": True,
+                "async_mode": False,
+                "log_dir": str(temp_dir / "logs"),
+                "buffer_size": 1,
+            },
+            "mcp": {"servers": []},
+        }
+    )
 
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         body="Prefer visual PDF checks.",
     )
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
@@ -466,7 +476,7 @@ def test_llm_log_includes_inline_skill_and_tool_timeline(temp_dir, monkeypatch):
         ]
     )
     context = Context.create(cwd=str(repo_root))
-    agent = Agent(llm, tools, context, skill_manager=manager)
+    agent = Agent(llm, tools, context, skill_manager=manager, runtime_config=runtime_config)
 
     response = agent.run("$pdf help with pdfs")
     assert response == "Done"

@@ -9,7 +9,7 @@ import unicodedata
 
 from src.utils import resolve_path
 
-DEFAULT_SESSIONS_ROOT = "~/.nano-claw/sessions"
+DEFAULT_SESSIONS_ROOT = "~/.babyclaw/sessions"
 _SESSION_SLUG_MAX_LENGTH = 48
 
 

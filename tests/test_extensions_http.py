@@ -14,7 +14,7 @@ from src.server.app import create_app
 
 def write_extension_bundle(repo_root: Path, *, name: str = "http-extension") -> None:
     """Create one minimal repo-local extension bundle."""
-    bundle_dir = repo_root / ".nano-claw" / "extensions" / name
+    bundle_dir = repo_root / ".babyclaw" / "extensions" / name
     bundle_dir.mkdir(parents=True, exist_ok=True)
     (bundle_dir / "runner.py").write_text(
         "import json, sys\n"
@@ -89,7 +89,7 @@ def test_runtime_reload_endpoint_activates_new_extension_tool(
             "extensions": {
                 "enabled": True,
                 "user_root": str(temp_dir / "user-extensions"),
-                "repo_root": ".nano-claw/extensions",
+                "repo_root": ".babyclaw/extensions",
                 "runner_timeout_seconds": 1,
                 "install_timeout_seconds": 5,
                 "catalogs": [],

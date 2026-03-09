@@ -1,1 +1,1 @@
-"""nano-claw: A minimalism terminal-based AI code agent."""
+"""babyclaw: A minimalism terminal-based AI code agent."""

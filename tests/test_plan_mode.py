@@ -146,7 +146,7 @@ def create_plan_command_context(temp_dir, *, prompt_answers=None):
 
 def test_build_tool_registry_uses_plan_safe_profiles(monkeypatch, temp_dir):
     """Plan profiles should expose only planning-safe tools."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     Config.reload()
     runtime_config = Config(
         {
@@ -210,7 +210,7 @@ def test_plan_prompt_and_execution_contract_include_expected_content(temp_dir):
     """Planning prompts and approved-plan contracts should expose the right workflow text."""
     session_context = Context.create(cwd=str(temp_dir))
     session_context.set_session_mode("plan")
-    plan = create_session_plan(session_context, task="Add plan mode", plan_dir=".nano-claw/plans")
+    plan = create_session_plan(session_context, task="Add plan mode", plan_dir=".babyclaw/plans")
     write_plan_content(session_context, "# Plan\n\n- inspect\n- implement\n- verify\n")
     approved_plan = mark_plan_approved(session_context)
 
@@ -229,7 +229,7 @@ def test_plan_prompt_and_execution_contract_include_expected_content(temp_dir):
 def test_write_plan_tool_writes_only_canonical_plan_file(temp_dir):
     """write_plan should persist only the canonical plan file for the current session."""
     session_context = Context.create(cwd=str(temp_dir))
-    plan = create_session_plan(session_context, task="Plan safely", plan_dir=".nano-claw/plans")
+    plan = create_session_plan(session_context, task="Plan safely", plan_dir=".babyclaw/plans")
     unrelated_file = temp_dir / "other.md"
 
     result = WritePlanTool().execute(
@@ -246,7 +246,7 @@ def test_write_plan_tool_writes_only_canonical_plan_file(temp_dir):
 def test_submit_plan_tool_marks_plan_ready_for_review(temp_dir):
     """submit_plan should store review metadata on the session plan."""
     session_context = Context.create(cwd=str(temp_dir))
-    create_session_plan(session_context, task="Plan safely", plan_dir=".nano-claw/plans")
+    create_session_plan(session_context, task="Plan safely", plan_dir=".babyclaw/plans")
     write_plan_content(session_context, "# Plan\n\n- inspect\n")
 
     result = SubmitPlanTool().execute(
@@ -265,7 +265,7 @@ def test_submit_plan_tool_marks_plan_ready_for_review(temp_dir):
 
 def test_plan_start_accepts_and_executes_immediately(monkeypatch, temp_dir):
     """Accepting a submitted plan should switch back to build mode and execute it."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     Config.reload()
     registry, command_context, profile_changes, turn_prompts = create_plan_command_context(
         temp_dir,
@@ -290,7 +290,7 @@ def test_plan_start_accepts_and_executes_immediately(monkeypatch, temp_dir):
 
 def test_plan_start_rejects_and_returns_to_build_mode(monkeypatch, temp_dir):
     """Rejecting a submitted plan should return the session to build mode without execution."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     Config.reload()
     registry, command_context, profile_changes, turn_prompts = create_plan_command_context(
         temp_dir,
@@ -314,11 +314,11 @@ def test_plan_start_rejects_and_returns_to_build_mode(monkeypatch, temp_dir):
 
 def test_plan_apply_executes_ready_plan(monkeypatch, temp_dir):
     """`/plan apply` should mark a ready plan approved and execute it."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     Config.reload()
     registry, command_context, profile_changes, turn_prompts = create_plan_command_context(temp_dir)
     session_context = command_context["session_context"]
-    plan = create_session_plan(session_context, task="Apply later", plan_dir=".nano-claw/plans")
+    plan = create_session_plan(session_context, task="Apply later", plan_dir=".babyclaw/plans")
     write_plan_content(session_context, "# Plan\n\n- later\n")
     plan = session_context.get_current_plan()
     assert plan is not None
@@ -343,7 +343,7 @@ def test_plan_apply_executes_ready_plan(monkeypatch, temp_dir):
 
 def test_plan_mode_subagent_children_inherit_read_only_tools(monkeypatch, temp_dir):
     """Plan-mode subagents should not inherit write, unrestricted shell, or plan-finalization tools."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     Config.reload()
     monkeypatch.setattr("src.subagents.LLMClient", DummyChildLLM)
 
@@ -351,7 +351,7 @@ def test_plan_mode_subagent_children_inherit_read_only_tools(monkeypatch, temp_d
     repo_root.mkdir()
     session_context = Context.create(cwd=str(repo_root))
     session_context.set_session_mode("plan")
-    create_session_plan(session_context, task="Plan safely", plan_dir=".nano-claw/plans")
+    create_session_plan(session_context, task="Plan safely", plan_dir=".babyclaw/plans")
     skill_manager = SkillManager(repo_root=repo_root)
     skill_manager.discover()
     subagent_manager = SubagentManager(enabled=True)

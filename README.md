@@ -1,14 +1,14 @@
-# nano-claw
+# BabyClaw
 
 <p align="center">
-  <img src="docs/babyclaw.png" alt="nano-claw mascot" width="400">
+  <img src="docs/babyclaw.png" alt="BabyClaw mascot" width="400">
 </p>
 
-nano-claw is a professional-grade AI coding agent that operates directly in your repository, combining an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and comprehensive session logging. Built for real development work rather than chat demos, nano-claw enables file inspection, code editing, command execution, and long-running sessions with context compaction.
+BabyClaw is a professional-grade AI coding agent that operates directly in your repository, combining an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and comprehensive session logging. Built for real development work rather than chat demos, BabyClaw enables file inspection, code editing, command execution, and long-running sessions with context compaction.
 
 ## Table of Contents
 
-- [Why nano-claw](#why-nano-claw)
+- [Why BabyClaw](#why-babyclaw)
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
@@ -20,9 +20,9 @@ nano-claw is a professional-grade AI coding agent that operates directly in your
 - [Development](#development)
 - [License](#license)
 
-## Why nano-claw
+## Why BabyClaw
 
-nano-claw is built on a philosophy of **terminal-first development** with these core principles:
+BabyClaw is built on a philosophy of **terminal-first development** with these core principles:
 
 ### Work Where Your Code Is
 - Operate directly in your repository from the shell
@@ -98,7 +98,7 @@ nano-claw is built on a philosophy of **terminal-first development** with these 
 
 ### ReAct Loop
 
-nano-claw implements a **ReAct (Reasoning + Acting)** loop that alternates between:
+BabyClaw implements a **ReAct (Reasoning + Acting)** loop that alternates between:
 
 1. **Thought**: The LLM reasons about the current state and next action
 2. **Action**: The LLM selects and invokes tools
@@ -198,8 +198,8 @@ sequenceDiagram
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/nano-claw.git
-cd nano-claw
+git clone https://github.com/yourusername/babyclaw.git
+cd babyclaw
 
 # Create virtual environment
 python -m venv .venv
@@ -277,7 +277,7 @@ llm:
   base_url: http://localhost:11434
 ```
 
-### Running nano-claw
+### Running BabyClaw
 
 **CLI Mode:**
 ```bash
@@ -307,6 +307,12 @@ Configuration is loaded in this order (later sources override earlier ones):
 3. Environment variables - Runtime overrides
 
 ### Key Configuration Sections
+
+Common dotted-path toggles:
+- `logging.async_mode` controls background log writes.
+- `macos_tools.enabled` turns the macOS helper tool family on or off.
+- `web_tools.enabled` controls the built-in public web reader tools.
+- `extensions.enabled` controls runtime extension discovery and loading.
 
 #### LLM Configuration
 
@@ -342,7 +348,7 @@ ui:
 server:
   host: 127.0.0.1           # Bind address (HTTP mode)
   port: 8765                # Port (HTTP mode)
-  db_path: ~/.nano-claw/state.db  # SQLite database path
+  db_path: ~/.babyclaw/state.db  # SQLite database path
 ```
 
 #### Logging
@@ -351,7 +357,7 @@ server:
 logging:
   enabled: true
   async_mode: true          # Background log writes
-  log_dir: ~/.nano-claw/sessions  # Session log directory
+  log_dir: ~/.babyclaw/sessions  # Session log directory
 ```
 
 #### Subagents
@@ -406,8 +412,8 @@ web_tools:
 ```yaml
 extensions:
   enabled: true
-  user_root: ~/.nano-claw/extensions
-  repo_root: .nano-claw/extensions
+  user_root: ~/.babyclaw/extensions
+  repo_root: .babyclaw/extensions
   runner_timeout_seconds: 60
   install_timeout_seconds: 30
   catalogs: []  # Remote extension catalogs
@@ -446,7 +452,7 @@ SUBAGENTS_MAX_PER_TURN=6
 # Logging
 LOGGING_ENABLED=true
 LOGGING_ASYNC_MODE=true
-LOGGING_LOG_DIR=~/.nano-claw/sessions
+LOGGING_LOG_DIR=~/.babyclaw/sessions
 ```
 
 ## Usage
@@ -454,7 +460,7 @@ LOGGING_LOG_DIR=~/.nano-claw/sessions
 ### Basic Interaction
 
 ```bash
-$ nano-claw
+$ babyclaw
 
 You > Read the README file and summarize it
 
@@ -585,7 +591,7 @@ Recent Turns (5)
 Every CLI or HTTP session creates a comprehensive log directory:
 
 ```
-~/.nano-claw/sessions/
+~/.babyclaw/sessions/
   latest-session -> 2026-03-09-task-sess_abc123def456/
   2026-03-09-task-sess_abc123def456/
     session.json              # Session metadata
@@ -679,19 +685,19 @@ Access at: `http://127.0.0.1:8765/admin`
 
 ## Extension System
 
-nano-claw provides multiple extension mechanisms:
+BabyClaw provides multiple extension mechanisms:
 
 ### Skills
 
 Domain-specific instruction bundles stored in `SKILL.md` files:
 
 **Discovery Roots:**
-- Repository: `.nano-claw/skills/`
-- User: `~/.nano-claw/skills/`
+- Repository: `.babyclaw/skills/`
+- User: `~/.babyclaw/skills/`
 
 **Skill Structure:**
 ```
-.nano-claw/skills/
+.babyclaw/skills/
 └── pdf/
     ├── SKILL.md              # Required: skill definition
     ├── scripts/              # Optional: executable scripts
@@ -740,8 +746,8 @@ MCP tools appear alongside built-in tools and can be inspected with `/mcp`.
 Out-of-process tool bundles that load without restart:
 
 **Extension Roots:**
-- Repository: `.nano-claw/extensions/`
-- User: `~/.nano-claw/extensions/`
+- Repository: `.babyclaw/extensions/`
+- User: `~/.babyclaw/extensions/`
 
 **Loading Extensions:**
 ```bash
@@ -784,7 +790,7 @@ Deep-dive technical documentation is available in the `docs/` directory:
 ### Project Structure
 
 ```
-nano-claw/
+babyclaw/
 ├── src/
 │   ├── agent.py              # Main agent orchestration
 │   ├── context.py            # Session context management
@@ -878,7 +884,7 @@ git commit -m "Add new feature"
 - **Use `/compact`** when context grows large
 - **Pin skills** (`/skill use`) for multi-turn workflows
 - **Check `/context`** periodically to monitor token usage
-- **Review logs** in `~/.nano-claw/sessions/latest-session/`
+- **Review logs** in `~/.babyclaw/sessions/latest-session/`
 
 ### Task Design
 
@@ -934,7 +940,7 @@ git commit -m "Add new feature"
 
 ### Getting Help
 
-- Review logs in `~/.nano-claw/sessions/latest-session/llm.log`
+- Review logs in `~/.babyclaw/sessions/latest-session/llm.log`
 - Use `/help` for command reference
 - Check `/tool`, `/skill`, `/mcp` for available resources
 - Inspect `/context` for session state
@@ -958,4 +964,4 @@ See `CLAUDE.md` for development guidelines.
 
 ---
 
-**nano-claw** - Professional AI assistance, right in your terminal.
+**BabyClaw** - Professional AI assistance, right in your terminal.

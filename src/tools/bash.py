@@ -1,4 +1,4 @@
-"""Bash tool for nano-claw."""
+"""Bash tool for babyclaw."""
 
 import subprocess
 from src.tools import Tool, ToolResult

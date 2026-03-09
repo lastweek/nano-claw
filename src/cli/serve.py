@@ -48,7 +48,7 @@ class _GracefulUvicornServer:
 
 def build_serve_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the serve subcommand."""
-    parser = argparse.ArgumentParser(prog="nano-claw serve")
+    parser = argparse.ArgumentParser(prog="babyclaw serve")
     parser.add_argument("--host", default=None)
     parser.add_argument("--port", type=int, default=None)
     return parser

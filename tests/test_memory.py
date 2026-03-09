@@ -49,8 +49,8 @@ def test_memory_store_resolves_into_unified_session_directory(temp_dir, http_run
 def test_default_session_memory_uses_test_runtime_root(temp_dir, monkeypatch):
     """Default SessionMemory should resolve under the pytest runtime root."""
     test_root = (temp_dir / "runtime").resolve()
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
-    monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST_ROOT", str(test_root))
     monkeypatch.delenv("MEMORY_ROOT_DIR", raising=False)
     runtime_config = Config()
 
@@ -58,7 +58,7 @@ def test_default_session_memory_uses_test_runtime_root(temp_dir, monkeypatch):
     session_root = store.session_root("sess_default")
 
     assert session_root.is_relative_to(test_root / "sessions")
-    assert not session_root.is_relative_to((temp_dir / ".nano-claw").resolve())
+    assert not session_root.is_relative_to((temp_dir / ".babyclaw").resolve())
 
 
 def test_memory_store_parses_empty_default_document(temp_dir, http_runtime_config):

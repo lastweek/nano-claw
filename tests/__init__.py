@@ -1,1 +1,1 @@
-"""Tests for nano-claw."""
+"""Tests for babyclaw."""

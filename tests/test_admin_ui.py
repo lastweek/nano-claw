@@ -15,7 +15,7 @@ def test_admin_ui_assets_load(temp_dir, http_runtime_config, patch_http_runtime)
     with TestClient(app) as client:
         index_response = client.get("/admin")
         assert index_response.status_code == 200
-        assert "nano-claw admin" in index_response.text
+        assert "BabyClaw admin" in index_response.text
         assert "/admin/static/app.js" in index_response.text
         assert 'id="admin-nav"' in index_response.text
         assert 'id="tree-view"' in index_response.text

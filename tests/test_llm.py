@@ -19,7 +19,7 @@ class TestLLMClient:
         from src.config import Config
         import os
         # Enable test mode to skip loading config.yaml
-        os.environ['NANO_CODER_TEST'] = 'true'
+        os.environ['BABYCLAW_TEST'] = 'true'
         Config.reload()
         # Reload modules that import config
         if 'src.llm' in sys.modules:
@@ -92,7 +92,7 @@ class TestLLMClient:
 
     def test_stream_tool_calls_preserve_model_index_order(self, monkeypatch):
         """Streamed tool calls should be returned in the original tool index order."""
-        monkeypatch.setenv("NANO_CODER_TEST", "true")
+        monkeypatch.setenv("BABYCLAW_TEST", "true")
         self._reload_config_and_modules()
         client = LLMClient(provider="ollama")
 

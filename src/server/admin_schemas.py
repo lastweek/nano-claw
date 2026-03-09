@@ -6,7 +6,7 @@ from time import time
 from typing import Any
 
 
-API_VERSION = "nano-claw/v1"
+API_VERSION = "babyclaw/v1"
 
 
 def new_resource_version() -> str:

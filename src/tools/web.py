@@ -15,7 +15,7 @@ import httpx
 from src.tools import Tool, ToolResult
 
 
-USER_AGENT = "nano-claw/0.1"
+USER_AGENT = "babyclaw/0.1"
 MAX_REDIRECTS = 5
 DEFAULT_FETCH_MAX_CHARS = 10_000
 DEFAULT_READ_MAX_CHARS = 12_000

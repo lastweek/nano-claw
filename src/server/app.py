@@ -72,7 +72,7 @@ def create_app(
         yield
         session_registry.close_all()
 
-    app = FastAPI(title="nano-claw HTTP", lifespan=lifespan)
+    app = FastAPI(title="BabyClaw HTTP", lifespan=lifespan)
     app.state.runtime_config = resolved_config
     app.state.runtime_config_loader = Config.reload
     app.state.repo_root = resolved_repo_root

@@ -1,4 +1,4 @@
-"""Pytest fixtures and test utilities for nano-claw."""
+"""Pytest fixtures and test utilities for babyclaw."""
 
 import os
 import shutil
@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-os.environ["NANO_CODER_TEST"] = "true"
-_EXISTING_TEST_ROOT = os.environ.get("NANO_CLAW_TEST_ROOT")
+os.environ["BABYCLAW_TEST"] = "true"
+_EXISTING_TEST_ROOT = os.environ.get("BABYCLAW_TEST_ROOT")
 _CREATED_TEST_ROOT = _EXISTING_TEST_ROOT is None
-_TEST_RUNTIME_ROOT = Path(_EXISTING_TEST_ROOT or tempfile.mkdtemp(prefix="nano-claw-test-root-")).resolve()
-os.environ["NANO_CLAW_TEST_ROOT"] = str(_TEST_RUNTIME_ROOT)
+_TEST_RUNTIME_ROOT = Path(_EXISTING_TEST_ROOT or tempfile.mkdtemp(prefix="babyclaw-test-root-")).resolve()
+os.environ["BABYCLAW_TEST_ROOT"] = str(_TEST_RUNTIME_ROOT)
 
 from src.config import Config
 from src.context import CompactedContextSummary, Context
@@ -67,7 +67,7 @@ def sample_file(temp_dir):
 @pytest.fixture
 def http_runtime_config(temp_dir, monkeypatch):
     """Build a deterministic runtime config for HTTP tests."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     for env_name in list(os.environ.keys()):
         if env_name.startswith(("LLM_", "SERVER_", "ENABLE_LOGGING", "ASYNC_LOGGING", "LOG_DIR")):
             monkeypatch.delenv(env_name, raising=False)

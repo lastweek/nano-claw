@@ -361,7 +361,7 @@ function buildSkillItemPayload(sessionId, skill, activeSkills) {
   const activeSkillSet = new Set((activeSkills || []).map(String));
   const active = activeSkillSet.has(String(skill?.name || ""));
   return {
-    apiVersion: "nano-claw/v1",
+    apiVersion: "babyclaw/v1",
     kind: "SkillItemView",
     metadata: {
       name: String(skill?.name || ""),
@@ -385,7 +385,7 @@ function buildSkillItemPayload(sessionId, skill, activeSkills) {
 
 function buildToolItemPayload(sessionId, tool) {
   return {
-    apiVersion: "nano-claw/v1",
+    apiVersion: "babyclaw/v1",
     kind: "ToolItemView",
     metadata: {
       name: String(tool?.name || ""),
@@ -426,7 +426,7 @@ function buildContextPayload(sessionPayload, agentPayload) {
   const agentStatus = agentPayload?.status || {};
   const agentSpec = agentPayload?.spec || {};
   return {
-    apiVersion: "nano-claw/v1",
+    apiVersion: "babyclaw/v1",
     kind: "ContextView",
     metadata: {
       name: sessionId,

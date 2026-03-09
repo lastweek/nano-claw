@@ -1,4 +1,4 @@
-"""Skill discovery and loading for nano-claw."""
+"""Skill discovery and loading for babyclaw."""
 
 from __future__ import annotations
 
@@ -83,8 +83,8 @@ class SkillManager:
         extra_roots: Optional[List[SkillDiscoveryRoot]] = None,
     ) -> None:
         self.repo_root = (repo_root or Path.cwd()).resolve()
-        self.user_root = (user_root or Path.home() / ".nano-claw" / "skills").expanduser().resolve()
-        self.repo_skills_root = self.repo_root / ".nano-claw" / "skills"
+        self.user_root = (user_root or Path.home() / ".babyclaw" / "skills").expanduser().resolve()
+        self.repo_skills_root = self.repo_root / ".babyclaw" / "skills"
         self.runtime_config = runtime_config
         self.platform_name = (platform_name or sys.platform).lower()
         self.extra_roots = list(extra_roots or [])

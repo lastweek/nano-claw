@@ -116,7 +116,7 @@ class InputHelper:
         """Initialize input session with history and auto-command completion.
 
         Args:
-            history_file: Path to command history file (default: ~/.nano-claw-history)
+            history_file: Path to command history file (default: ~/.babyclaw-history)
             command_names: List of command names for tab completion (without /)
             command_descriptions: Dict mapping command names to short descriptions
             skill_names: List of skill names for $skill completion (without $)
@@ -127,7 +127,7 @@ class InputHelper:
             output: Optional prompt_toolkit output for testing
         """
         if history_file is None:
-            history_file = Path.home() / ".nano-claw-history"
+            history_file = Path.home() / ".babyclaw-history"
 
         self.history = FileHistory(str(history_file))
         self.command_names = list(command_names or [])

@@ -1,4 +1,4 @@
-"""Main CLI entry point for nano-claw."""
+"""Main CLI entry point for BabyClaw."""
 
 from dataclasses import dataclass
 import os
@@ -49,14 +49,12 @@ from src.utils import env_truthy
 
 REQUEST_TYPE_STREAMING = "streaming"
 REQUEST_TYPE_NON_STREAMING = "non-streaming"
-NANO_CLAW_WORDMARK = r""" ____    ____  __  __          _   _
+BABYCLAW_WORDMARK = r""" ____    ____  __  __          _   _
 |  _ \  / __||  \/  | __ _    | \ | |
 | | | || (__ | |\/| |/ _` |   |  \| |
 | |_| | \___|| |  | | (_| |   | |\  |
 |____/  |___/ |_|  |_|\__,_|   |_| \_|
 """
-# Backward-compatible alias used by older tests/docs.
-NANO_CODER_WORDMARK = NANO_CLAW_WORDMARK
 FIRE_CHARACTERS = " .,:;irsXA253hMHGS#9B&@"
 FIRE_COLORS = (
     "#3a281f",
@@ -73,7 +71,7 @@ FIRE_COLORS = (
 def _build_banner_panel(llm_info_lines: list[Text], *, fire_text: Text | None = None) -> Panel:
     """Build the startup banner panel, optionally with one fire frame."""
     renderables = [
-        Text(NANO_CLAW_WORDMARK.rstrip("\n"), style="bold cyan"),
+        Text(BABYCLAW_WORDMARK.rstrip("\n"), style="bold cyan"),
     ]
     if fire_text is not None:
         renderables.append(fire_text)
@@ -135,7 +133,7 @@ def _render_fire_frame(heat: list[list[float]], rng: random.Random) -> Text:
 
 def _animate_banner_fire(console: Console, llm_info_lines: list[Text]) -> None:
     """Show a brief original ASCII fire animation before the static banner."""
-    width = max(len(line) for line in NANO_CLAW_WORDMARK.splitlines())
+    width = max(len(line) for line in BABYCLAW_WORDMARK.splitlines())
     height = 6
     rng = random.Random()
     heat = [[0.0 for _ in range(width)] for _ in range(height)]

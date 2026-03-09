@@ -155,7 +155,7 @@ def test_process_tool_calls_returns_capability_hint_for_unknown_tool(tmp_path):
 def test_process_tool_calls_keeps_submit_plan_as_terminal_control_tool(tmp_path):
     """submit_plan should end the tool batch with a terminal planning report."""
     context = Context.create(cwd=str(tmp_path))
-    create_session_plan(context, task="Plan the cleanup", plan_dir=".nano-claw/plans")
+    create_session_plan(context, task="Plan the cleanup", plan_dir=".babyclaw/plans")
     write_plan_content(context, "# Plan\n\n- inspect\n- refactor\n- verify\n")
     registry = ToolRegistry()
     registry.register(SubmitPlanTool())

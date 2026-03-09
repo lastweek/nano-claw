@@ -1,4 +1,4 @@
-"""Slash commands for nano-claw."""
+"""Slash commands for babyclaw."""
 
 from src.commands.registry import CommandRegistry, Command
 from src.commands import builtin

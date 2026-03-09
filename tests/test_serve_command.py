@@ -65,7 +65,7 @@ def test_run_serve_command_prints_access_urls_and_paths(
     assert "Health: http://127.0.0.1:8765/api/v1/health" in output
     assert "Repo root:" in output
     assert temp_dir.name in output
-    assert f"DB path: {(home_dir / '.nano-claw' / 'state.db').resolve()}" in output
+    assert f"DB path: {(home_dir / '.babyclaw' / 'state.db').resolve()}" in output
     assert config_calls == [
         (
             fake_app,

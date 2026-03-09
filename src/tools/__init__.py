@@ -1,4 +1,4 @@
-"""Tool system and built-in tool package for nano-claw."""
+"""Tool system and built-in tool package for babyclaw."""
 
 from __future__ import annotations
 

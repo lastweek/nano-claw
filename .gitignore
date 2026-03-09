@@ -22,9 +22,9 @@ coverage.xml
 
 # Logging
 logs/
-.nano-claw/*
-!.nano-claw/skills/
-!.nano-claw/skills/**
+.babyclaw/*
+!.babyclaw/skills/
+!.babyclaw/skills/**
 
 # IDE
 .vscode/

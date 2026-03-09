@@ -1,11 +1,14 @@
-"""Shared utility functions for nano-claw."""
+"""Shared utility functions for babyclaw."""
 
 from __future__ import annotations
 
 import os
+import ssl
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 
 def env_truthy(var_name: str, default: bool = False) -> bool:
@@ -77,6 +80,16 @@ def calculate_percentage(value: int, total: int | None) -> float | None:
     if total in (None, 0):
         return None
     return (value / total) * 100
+
+
+def create_httpx_client(**kwargs: Any) -> httpx.Client:
+    """Build one httpx client with a fallback for broken local certifi installs."""
+    try:
+        return httpx.Client(**kwargs)
+    except AttributeError as exc:
+        if "certifi" not in str(exc):
+            raise
+        return httpx.Client(**kwargs, verify=ssl.create_default_context())
 
 
 def utc_now() -> str:

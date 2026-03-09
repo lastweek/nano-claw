@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import httpx
 
 from src.tools import Tool, ToolRegistry, ToolResult
+from src.utils import create_httpx_client
 
 
 JSONRPC_VERSION = "2.0"
@@ -19,7 +20,7 @@ SUPPORTED_PROTOCOL_VERSIONS = (DEFAULT_PROTOCOL_VERSION, LEGACY_PROTOCOL_VERSION
 SESSION_ID_HEADER = "Mcp-Session-Id"
 PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
 ACCEPT_HEADER = "application/json, text/event-stream"
-USER_AGENT = "nano-claw/0.1"
+USER_AGENT = "babyclaw/0.1"
 
 
 @dataclass
@@ -46,7 +47,7 @@ class MCPServer:
             print(f"[MCP:{self.name}] Creating HTTP client (timeout={self.timeout}s)")
 
         if self.client is None:
-            self.client = httpx.Client(
+            self.client = create_httpx_client(
                 timeout=self.timeout,
                 follow_redirects=True,
                 headers={"Accept": ACCEPT_HEADER, "User-Agent": USER_AGENT},
@@ -286,7 +287,7 @@ class MCPServer:
                         "protocolVersion": candidate_version,
                         "capabilities": {},
                         "clientInfo": {
-                            "name": "nano-claw",
+                            "name": "babyclaw",
                             "version": "0.1.0",
                         },
                     },

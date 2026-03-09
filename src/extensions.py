@@ -208,7 +208,7 @@ class ExtensionManager:
         archive_bytes = self._download_archive(package)
         self._verify_archive_hash(archive_bytes, package.sha256)
 
-        with tempfile.TemporaryDirectory(prefix="nano-claw-extension-install-") as temp_dir_raw:
+        with tempfile.TemporaryDirectory(prefix="babyclaw-extension-install-") as temp_dir_raw:
             temp_dir = Path(temp_dir_raw)
             extracted_root = temp_dir / "extract"
             extracted_root.mkdir(parents=True, exist_ok=True)

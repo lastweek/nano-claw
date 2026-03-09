@@ -92,7 +92,7 @@ class SessionRuntime:
         self._mcp_health_cache_initialized = False
         self._worker = Thread(
             target=self._worker_loop,
-            name=f"nano-claw-session-{session_id}",
+            name=f"babyclaw-session-{session_id}",
             daemon=True,
         )
         self._worker.start()

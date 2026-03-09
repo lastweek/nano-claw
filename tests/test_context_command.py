@@ -99,7 +99,7 @@ def create_context_command_env(
     with_mcp_tool=False,
 ):
     """Create a command registry and runtime context for /context tests."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     cfg = Config.reload()
     cfg.logging.enabled = False
     cfg.logging.async_mode = False
@@ -111,7 +111,7 @@ def create_context_command_env(
     user_root.mkdir(parents=True, exist_ok=True)
 
     if with_repo_skill:
-        write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
+        write_skill(repo_root / ".babyclaw" / "skills" / "pdf")
     if with_user_skill:
         write_skill(
             user_root / "terraform",

@@ -15,7 +15,7 @@ def test_static_ui_assets_load(temp_dir, http_runtime_config, patch_http_runtime
     with TestClient(app) as client:
         index_response = client.get("/")
         assert index_response.status_code == 200
-        assert "nano-claw" in index_response.text
+        assert "BabyClaw" in index_response.text
         assert "/static/app.js" in index_response.text
         assert "Close Session" in index_response.text
 

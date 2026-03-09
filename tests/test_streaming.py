@@ -4,7 +4,7 @@ import json
 from unittest.mock import Mock, patch
 
 from src.agent import Agent
-from src.config import config
+from src.config import Config
 from src.context import Context
 from src.llm import LLMClient
 from src.logger import SessionLogger
@@ -75,11 +75,21 @@ class TestStreaming:
 
     def test_agent_run_stream_yields_tokens(self, temp_dir, monkeypatch):
         """agent.run_stream should yield text and emit activity events."""
-        monkeypatch.setattr(config.logging, "log_dir", str(temp_dir))
+        runtime_config = Config(
+            {
+                "logging": {
+                    "enabled": True,
+                    "async_mode": False,
+                    "log_dir": str(temp_dir),
+                    "buffer_size": 1,
+                },
+                "mcp": {"servers": []},
+            }
+        )
         context = Context.create(cwd=str(temp_dir))
         tools = ToolRegistry()
-        llm_client = LLMClient(provider="ollama")
-        agent = Agent(llm_client, tools, context)
+        llm_client = LLMClient(provider="ollama", runtime_config=runtime_config)
+        agent = Agent(llm_client, tools, context, runtime_config=runtime_config)
 
         mock_chunks = [
             Mock(choices=[Mock(delta=Mock(role="assistant", content="Test", tool_calls=None), finish_reason=None)], usage=None),

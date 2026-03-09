@@ -1,4 +1,4 @@
-"""Write file tool for nano-claw."""
+"""Write file tool for babyclaw."""
 
 from src.tools import Tool, ToolResult
 

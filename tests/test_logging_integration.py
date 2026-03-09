@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.agent import Agent
-from src.config import Config, config
+from src.config import Config
 from src.context import Context
 from src.llm import LLMClient
 from src.tools import ToolRegistry
@@ -18,8 +18,8 @@ class TestLoggingIntegration:
     def test_default_agent_logger_uses_test_runtime_root(self, temp_dir, monkeypatch):
         """Default Agent logger should resolve under the pytest runtime root."""
         test_root = (temp_dir / "runtime").resolve()
-        monkeypatch.setenv("NANO_CODER_TEST", "true")
-        monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+        monkeypatch.setenv("BABYCLAW_TEST", "true")
+        monkeypatch.setenv("BABYCLAW_TEST_ROOT", str(test_root))
         monkeypatch.delenv("LOG_DIR", raising=False)
         runtime_config = Config()
 
@@ -32,17 +32,27 @@ class TestLoggingIntegration:
 
         session_dir = agent.logger.ensure_session_dir()
         assert session_dir.is_relative_to(test_root / "sessions")
-        assert not session_dir.is_relative_to((Path.home() / ".nano-claw").resolve())
+        assert not session_dir.is_relative_to((Path.home() / ".babyclaw").resolve())
 
     def test_agent_shares_logger_with_llm_client(self, temp_dir, monkeypatch):
         """Agent should inject its logger into LLMClient."""
-        monkeypatch.setattr(config.logging, "log_dir", str(temp_dir))
+        runtime_config = Config(
+            {
+                "logging": {
+                    "enabled": True,
+                    "async_mode": False,
+                    "log_dir": str(temp_dir),
+                    "buffer_size": 1,
+                },
+                "mcp": {"servers": []},
+            }
+        )
         context = Context.create(cwd=str(temp_dir))
         tools = ToolRegistry()
         tools.register(ReadTool())
         with patch("src.llm.OpenAI"):
-            llm_client = LLMClient(provider="ollama")
-        agent = Agent(llm_client, tools, context)
+            llm_client = LLMClient(provider="ollama", runtime_config=runtime_config)
+        agent = Agent(llm_client, tools, context, runtime_config=runtime_config)
 
         assert llm_client.logger is not None
         assert llm_client.logger is agent.logger
@@ -50,13 +60,23 @@ class TestLoggingIntegration:
 
     def test_agent_run_creates_session_directory_with_llm_and_events(self, temp_dir, monkeypatch):
         """A normal agent run should create session.json, llm.log, and events.jsonl."""
-        monkeypatch.setattr(config.logging, "log_dir", str(temp_dir))
+        runtime_config = Config(
+            {
+                "logging": {
+                    "enabled": True,
+                    "async_mode": False,
+                    "log_dir": str(temp_dir),
+                    "buffer_size": 1,
+                },
+                "mcp": {"servers": []},
+            }
+        )
         context = Context.create(cwd=str(temp_dir))
         tools = ToolRegistry()
         tools.register(ReadTool())
         with patch("src.llm.OpenAI"):
-            llm_client = LLMClient(provider="ollama")
-        agent = Agent(llm_client, tools, context)
+            llm_client = LLMClient(provider="ollama", runtime_config=runtime_config)
+        agent = Agent(llm_client, tools, context, runtime_config=runtime_config)
 
         mock_response = Mock()
         mock_response.usage = None

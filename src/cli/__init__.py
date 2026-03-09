@@ -1,1 +1,1 @@
-"""CLI helpers for alternate nano-claw entrypoints."""
+"""CLI helpers for alternate babyclaw entrypoints."""

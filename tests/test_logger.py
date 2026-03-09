@@ -33,8 +33,8 @@ class TestSessionLogger:
     def test_default_logger_uses_test_runtime_root(self, temp_dir, monkeypatch):
         """Default SessionLogger should resolve under the pytest runtime root."""
         test_root = (temp_dir / "runtime").resolve()
-        monkeypatch.setenv("NANO_CODER_TEST", "true")
-        monkeypatch.setenv("NANO_CLAW_TEST_ROOT", str(test_root))
+        monkeypatch.setenv("BABYCLAW_TEST", "true")
+        monkeypatch.setenv("BABYCLAW_TEST_ROOT", str(test_root))
         monkeypatch.delenv("LOG_DIR", raising=False)
         runtime_config = Config()
 
@@ -52,7 +52,7 @@ class TestSessionLogger:
 
         session_dir = logger.ensure_session_dir()
         assert session_dir.is_relative_to(test_root / "sessions")
-        assert not session_dir.is_relative_to((Path.home() / ".nano-claw").resolve())
+        assert not session_dir.is_relative_to((Path.home() / ".babyclaw").resolve())
 
     def _build_logger(self, temp_dir, **kwargs):
         logger = SessionLogger(str(uuid.uuid4()), log_dir=str(temp_dir), enabled=True, **kwargs)
@@ -336,7 +336,7 @@ class TestSessionLogger:
             stage="started",
             plan_id="plan-1234",
             status="draft",
-            file_path=".nano-claw/plans/test.md",
+            file_path=".babyclaw/plans/test.md",
             task="add workflow",
         )
         logger.log_llm_request(
@@ -370,7 +370,7 @@ class TestSessionLogger:
             stage="submitted",
             plan_id="plan-1234",
             status="ready_for_review",
-            file_path=".nano-claw/plans/test.md",
+            file_path=".babyclaw/plans/test.md",
             summary="Plan ready",
         )
         logger.close()

@@ -34,7 +34,7 @@ def create_console(buffer: io.StringIO) -> Console:
 def create_skill_context(temp_dir):
     """Create a command registry and skill command context."""
     repo_root = temp_dir / "repo"
-    write_skill(repo_root / ".nano-claw" / "skills" / "pdf")
+    write_skill(repo_root / ".babyclaw" / "skills" / "pdf")
     write_skill(
         temp_dir / "user-skills" / "terraform",
         name="terraform",
@@ -144,7 +144,7 @@ def test_skill_show_reports_user_global_skill_as_catalog_visible(temp_dir):
 def test_skill_use_rejects_ineligible_skill(temp_dir):
     """`/skill use` should reject discovered skills that are gated off in this runtime."""
     repo_root = temp_dir / "repo"
-    gated_skill_dir = repo_root / ".nano-claw" / "skills" / "macos-finder"
+    gated_skill_dir = repo_root / ".babyclaw" / "skills" / "macos-finder"
     gated_skill_dir.mkdir(parents=True, exist_ok=True)
     (gated_skill_dir / "SKILL.md").write_text(
         "---\n"

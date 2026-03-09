@@ -1,4 +1,4 @@
-"""Agent orchestration for nano-claw."""
+"""Agent orchestration for babyclaw."""
 
 from dataclasses import dataclass
 import json

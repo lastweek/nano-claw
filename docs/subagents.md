@@ -559,7 +559,7 @@ Priority order (highest to lowest):
 The subagent system creates a hierarchical logging structure:
 
 ```
-~/.nano-claw/sessions/
+~/.babyclaw/sessions/
   latest-session -> 2026-03-06-debug-sess_ab12cd34ef56/   # Parent symlink
   2026-03-06-debug-sess_ab12cd34ef56/                     # Parent session
     session.json                             # Parent metadata
@@ -1198,8 +1198,8 @@ class SubagentResult:
 
 ## References
 
-- [Source Code](/Volumes/CaseSensitive/nano-claw/src/subagents.py)
-- [Tests](/Volumes/CaseSensitive/nano-claw/tests/test_subagents.py)
-- [Tool Implementation](/Volumes/CaseSensitive/nano-claw/src/tools/subagent.py)
-- [Agent Integration](/Volumes/CaseSensitive/nano-claw/src/agent.py)
-- [Configuration](/Volumes/CaseSensitive/nano-claw/src/config.py)
+- [Source Code](/Volumes/CaseSensitive/babyclaw/src/subagents.py)
+- [Tests](/Volumes/CaseSensitive/babyclaw/tests/test_subagents.py)
+- [Tool Implementation](/Volumes/CaseSensitive/babyclaw/src/tools/subagent.py)
+- [Agent Integration](/Volumes/CaseSensitive/babyclaw/src/agent.py)
+- [Configuration](/Volumes/CaseSensitive/babyclaw/src/config.py)

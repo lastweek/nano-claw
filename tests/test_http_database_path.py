@@ -32,7 +32,7 @@ def test_resolve_http_database_path_expands_home_directory(monkeypatch, temp_dir
 
     resolved = resolve_http_database_path(DEFAULT_HTTP_DATABASE_PATH, repo_root)
 
-    assert resolved == (home_dir / ".nano-claw" / "state.db").resolve()
+    assert resolved == (home_dir / ".babyclaw" / "state.db").resolve()
 
 
 def test_create_app_uses_expanded_global_db_path(monkeypatch, temp_dir):
@@ -42,6 +42,8 @@ def test_create_app_uses_expanded_global_db_path(monkeypatch, temp_dir):
     home_dir.mkdir()
     repo_root.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("BABYCLAW_TEST", raising=False)
+    monkeypatch.delenv("BABYCLAW_TEST_ROOT", raising=False)
     monkeypatch.delenv("SERVER_DB_PATH", raising=False)
 
     app = create_app(
@@ -49,7 +51,7 @@ def test_create_app_uses_expanded_global_db_path(monkeypatch, temp_dir):
         repo_root=repo_root,
     )
 
-    assert app.state.database.db_path == (home_dir / ".nano-claw" / "state.db").resolve()
+    assert app.state.database.db_path == (home_dir / ".babyclaw" / "state.db").resolve()
 
 
 def test_migrate_legacy_http_database_moves_main_db_and_sidecars(monkeypatch, temp_dir):
@@ -130,6 +132,8 @@ def test_create_app_startup_migrates_legacy_repo_db(monkeypatch, temp_dir):
     home_dir.mkdir()
     repo_root.mkdir()
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("BABYCLAW_TEST", raising=False)
+    monkeypatch.delenv("BABYCLAW_TEST_ROOT", raising=False)
     monkeypatch.delenv("SERVER_DB_PATH", raising=False)
 
     legacy_db_path = (repo_root / LEGACY_HTTP_DATABASE_PATH).resolve()

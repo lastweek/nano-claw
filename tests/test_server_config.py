@@ -6,8 +6,8 @@ from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 
 def test_server_defaults(monkeypatch):
     """Server config should expose the documented local defaults."""
-    monkeypatch.delenv("NANO_CODER_TEST", raising=False)
-    monkeypatch.delenv("NANO_CLAW_TEST_ROOT", raising=False)
+    monkeypatch.delenv("BABYCLAW_TEST", raising=False)
+    monkeypatch.delenv("BABYCLAW_TEST_ROOT", raising=False)
     monkeypatch.delenv("SERVER_HOST", raising=False)
     monkeypatch.delenv("SERVER_PORT", raising=False)
     monkeypatch.delenv("SERVER_DB_PATH", raising=False)
@@ -45,7 +45,7 @@ def test_server_defaults(monkeypatch):
     assert runtime_config.server.serve_ui is True
     assert runtime_config.server.sse_heartbeat_seconds == 10
     assert runtime_config.memory.enabled is True
-    assert runtime_config.memory.root_dir == "~/.nano-claw/sessions"
+    assert runtime_config.memory.root_dir == "~/.babyclaw/sessions"
     assert runtime_config.memory.debug is False
     assert runtime_config.memory.auto_load_memory is True
     assert runtime_config.memory.max_auto_chars == 4000
@@ -71,8 +71,8 @@ def test_server_defaults(monkeypatch):
     assert runtime_config.web_tools.enable_read_webpage is True
     assert runtime_config.web_tools.enable_extract_page_links is True
     assert runtime_config.extensions.enabled is True
-    assert runtime_config.extensions.user_root == "~/.nano-claw/extensions"
-    assert runtime_config.extensions.repo_root == ".nano-claw/extensions"
+    assert runtime_config.extensions.user_root == "~/.babyclaw/extensions"
+    assert runtime_config.extensions.repo_root == ".babyclaw/extensions"
     assert runtime_config.extensions.runner_timeout_seconds == 60
     assert runtime_config.extensions.install_timeout_seconds == 30
 
@@ -109,7 +109,7 @@ def test_server_env_overrides(monkeypatch):
     monkeypatch.setenv("WEB_TOOLS_ENABLE_EXTRACT_PAGE_LINKS", "false")
     monkeypatch.setenv("EXTENSIONS_ENABLED", "false")
     monkeypatch.setenv("EXTENSIONS_USER_ROOT", "/tmp/extensions-user")
-    monkeypatch.setenv("EXTENSIONS_REPO_ROOT", ".nano-claw/custom-extensions")
+    monkeypatch.setenv("EXTENSIONS_REPO_ROOT", ".babyclaw/custom-extensions")
     monkeypatch.setenv("EXTENSIONS_RUNNER_TIMEOUT_SECONDS", "88")
     monkeypatch.setenv("EXTENSIONS_INSTALL_TIMEOUT_SECONDS", "22")
 
@@ -145,6 +145,6 @@ def test_server_env_overrides(monkeypatch):
     assert runtime_config.web_tools.enable_extract_page_links is False
     assert runtime_config.extensions.enabled is False
     assert runtime_config.extensions.user_root == "/tmp/extensions-user"
-    assert runtime_config.extensions.repo_root == ".nano-claw/custom-extensions"
+    assert runtime_config.extensions.repo_root == ".babyclaw/custom-extensions"
     assert runtime_config.extensions.runner_timeout_seconds == 88
     assert runtime_config.extensions.install_timeout_seconds == 22

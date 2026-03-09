@@ -11,7 +11,7 @@ llm:
 logging:
   enabled: true
   async_mode: false
-  log_dir: ~/.nano-claw/sessions
+  log_dir: ~/.babyclaw/sessions
   buffer_size: 1
 
 agent:
@@ -26,7 +26,7 @@ ui:
 server:
   host: 127.0.0.1
   port: 8765
-  db_path: ~/.nano-claw/state.db
+  db_path: ~/.babyclaw/state.db
   max_parallel_runs: 1
   serve_ui: true
   sse_heartbeat_seconds: 10
@@ -45,12 +45,12 @@ subagents:
 
 plan:
   enabled: true
-  plan_dir: .nano-claw/plans
+  plan_dir: .babyclaw/plans
   allow_subagents: true
 
 memory:
   enabled: true
-  root_dir: ~/.nano-claw/sessions
+  root_dir: ~/.babyclaw/sessions
   debug: false
   auto_load_memory: true
   max_auto_chars: 4000
@@ -82,14 +82,14 @@ web_tools:
 
 extensions:
   enabled: true
-  user_root: ~/.nano-claw/extensions
-  repo_root: .nano-claw/extensions
+  user_root: ~/.babyclaw/extensions
+  repo_root: .babyclaw/extensions
   runner_timeout_seconds: 60
   install_timeout_seconds: 30
   catalogs: []
 
 # MCP (Model Context Protocol) Servers
-# External tool servers that nano-claw can connect to
+# External tool servers that babyclaw can connect to
 mcp:
   servers:
     - name: deepwiki

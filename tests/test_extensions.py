@@ -95,7 +95,7 @@ def build_extension_config(temp_dir: Path, **overrides) -> Config:
         "extensions": {
             "enabled": True,
             "user_root": str(temp_dir / "user-extensions"),
-            "repo_root": ".nano-claw/extensions",
+            "repo_root": ".babyclaw/extensions",
             "runner_timeout_seconds": 1,
             "install_timeout_seconds": 5,
             "catalogs": [],
@@ -122,7 +122,7 @@ def test_extension_manager_discovers_repo_override_and_skill_roots(temp_dir):
     user_root = temp_dir / "user-extensions"
     write_extension_bundle(user_root, name="shared-extension", version="1.0.0")
     repo_bundle = write_extension_bundle(
-        repo_root / ".nano-claw" / "extensions",
+        repo_root / ".babyclaw" / "extensions",
         name="shared-extension",
         version="2.0.0",
     )
@@ -151,7 +151,7 @@ def test_extension_manager_discovers_repo_override_and_skill_roots(temp_dir):
 def test_build_tool_registry_registers_extension_tools_in_supported_profiles(temp_dir):
     """Extension tools should appear everywhere except plan-subagent mode."""
     repo_root = temp_dir / "repo"
-    write_extension_bundle(repo_root / ".nano-claw" / "extensions", name="buildable-extension")
+    write_extension_bundle(repo_root / ".babyclaw" / "extensions", name="buildable-extension")
     runtime_config = build_extension_config(temp_dir)
     extension_manager = ExtensionManager(repo_root=repo_root, runtime_config=runtime_config)
     extension_manager.discover()
@@ -197,7 +197,7 @@ def test_extension_tool_executes_runner_and_normalizes_failures(temp_dir):
     """Extension tool calls should normalize success, malformed, error, and timeout paths."""
     repo_root = temp_dir / "repo"
     runtime_config = build_extension_config(temp_dir)
-    write_extension_bundle(repo_root / ".nano-claw" / "extensions", name="runner-extension")
+    write_extension_bundle(repo_root / ".babyclaw" / "extensions", name="runner-extension")
     manager = ExtensionManager(repo_root=repo_root, runtime_config=runtime_config)
     manager.discover()
     extension = manager.get_extension("runner-extension")
@@ -224,7 +224,7 @@ def test_refresh_live_runtime_adds_extension_tools_and_prunes_missing_skill(temp
     """Live refresh should activate new extension tools and drop pinned skills that disappeared."""
     repo_root = temp_dir / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
-    stale_skill_dir = repo_root / ".nano-claw" / "skills" / "legacy"
+    stale_skill_dir = repo_root / ".babyclaw" / "skills" / "legacy"
     stale_skill_dir.mkdir(parents=True, exist_ok=True)
     (stale_skill_dir / "SKILL.md").write_text(
         "---\nname: legacy\ndescription: Legacy skill\n---\n\nUse the old path.\n",
@@ -264,7 +264,7 @@ def test_refresh_live_runtime_adds_extension_tools_and_prunes_missing_skill(temp
     fake_agent = FakeAgent()
     input_helper = FakeInputHelper()
     stale_skill_dir.joinpath("SKILL.md").unlink()
-    write_extension_bundle(repo_root / ".nano-claw" / "extensions", name="refreshed-extension")
+    write_extension_bundle(repo_root / ".babyclaw" / "extensions", name="refreshed-extension")
     refreshed_config = build_extension_config(temp_dir)
 
     bundle, outcome = refresh_live_runtime(
@@ -308,7 +308,7 @@ def test_extension_manager_installs_catalog_package(temp_dir, monkeypatch):
         extensions={
             "enabled": True,
             "user_root": str(temp_dir / "user-extensions"),
-            "repo_root": ".nano-claw/extensions",
+            "repo_root": ".babyclaw/extensions",
             "runner_timeout_seconds": 1,
             "install_timeout_seconds": 5,
             "catalogs": [{"name": "curated", "url": "https://catalog.test/extensions.json"}],

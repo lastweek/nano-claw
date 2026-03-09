@@ -1,4 +1,4 @@
-"""LLM integration for nano-claw."""
+"""LLM integration for BabyClaw."""
 
 import os
 from typing import Optional, List, Dict, TYPE_CHECKING, Any
@@ -6,6 +6,7 @@ from openai import OpenAI
 from src.config import config
 from src.message_types import ChatMessage, ToolCallPayload
 from src.tools import REQUEST_KIND_AGENT_TURN
+from src.utils import create_httpx_client
 
 if TYPE_CHECKING:
     from src.logger import SessionLogger
@@ -70,7 +71,15 @@ class LLMClient:
         if base_url:
             client_kwargs["base_url"] = base_url
 
-        self.client = OpenAI(**client_kwargs)
+        try:
+            self.client = OpenAI(**client_kwargs)
+        except AttributeError as exc:
+            if "certifi" not in str(exc):
+                raise
+            self.client = OpenAI(
+                **client_kwargs,
+                http_client=create_httpx_client(),
+            )
 
     def _get_api_key(self, provider: str) -> Optional[str]:
         """Get API key for the given provider.

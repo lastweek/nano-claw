@@ -31,7 +31,7 @@ from src.session_paths import DEFAULT_SESSIONS_ROOT, resolve_session_dir, resolv
 from src.utils import env_truthy, resolve_path
 
 DEFAULT_MEMORY_ROOT = DEFAULT_SESSIONS_ROOT
-LEGACY_MEMORY_ROOT = ".nano-claw/memory"
+LEGACY_MEMORY_ROOT = ".babyclaw/memory"
 _SECTION_HEADINGS = {
     "fact": "Facts",
     "decision": "Decisions",

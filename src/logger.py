@@ -1,4 +1,4 @@
-"""Session logging for nano-claw."""
+"""Session logging for babyclaw."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from src.tools import (
 from src.utils import env_truthy, resolve_path
 
 
-DEFAULT_LOG_DIR = "~/.nano-claw/sessions"
+DEFAULT_LOG_DIR = "~/.babyclaw/sessions"
 LEGACY_LOG_DIR = "logs"
 
 

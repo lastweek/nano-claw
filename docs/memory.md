@@ -2,7 +2,7 @@
 
 ## Abstract
 
-The nano-claw Agent Memory system provides persistent, queryable context across AI coding sessions while respecting finite LLM context windows. Unlike ephemeral conversation history, memory offers structured, durable storage of facts, decisions, tasks, and notes that can be automatically retrieved and injected into relevant future turns. The system uses human-readable Markdown files for storage, ensuring transparency, portability, and debuggability while providing policy-based validation, ranked search, and bounded prompt injection.
+The BabyClaw Agent Memory system provides persistent, queryable context across AI coding sessions while respecting finite LLM context windows. Unlike ephemeral conversation history, memory offers structured, durable storage of facts, decisions, tasks, and notes that can be automatically retrieved and injected into relevant future turns. The system uses human-readable Markdown files for storage, ensuring transparency, portability, and debuggability while providing policy-based validation, ranked search, and bounded prompt injection.
 
 ## Table of Contents
 
@@ -104,7 +104,7 @@ Structured, long-lived knowledge organized by kind:
 - confidence: 1.0
 - status: active
 
-Senior software engineer working on nano-claw memory system refactoring.
+Senior software engineer working on babyclaw memory system refactoring.
 
 ## Decisions
 ### entry_id: decision_001
@@ -408,7 +408,7 @@ sequenceDiagram
    Session memory:
 
    - [fact] User identity (updated 2026-03-09, confidence 1.00)
-     Senior software engineer working on nano-claw memory system.
+     Senior software engineer working on babyclaw memory system.
 
    - [decision] Markdown storage format
      Store memory in human-readable Markdown for transparency.
@@ -811,7 +811,7 @@ memory:
   debug: false
 
   # Storage paths
-  root: ".nano-claw/sessions"
+  root: ".babyclaw/sessions"
 
   # Default policies (can be overridden per session)
   default_read_policy: "curated_plus_recent_daily"
@@ -948,7 +948,7 @@ Enable verbose memory tracing:
 ```bash
 # Set environment variable
 export MEMORY_DEBUG=true
-export NANO_CLAW_LOG_LEVEL=debug
+export BABYCLAW_LOG_LEVEL=debug
 
 # Or enable in config.yaml
 memory:

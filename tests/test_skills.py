@@ -21,7 +21,7 @@ def test_valid_skill_parses_correctly(temp_dir):
     """Valid skills should parse with metadata and body."""
     repo_root = temp_dir / "repo"
     skill_file = write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         "name: pdf\ndescription: Handle PDFs\nmetadata:\n  short-description: PDF workflows",
         "Prefer visual PDF checks.\n",
     )
@@ -42,7 +42,7 @@ def test_valid_skill_parses_correctly(temp_dir):
 def test_invalid_frontmatter_is_skipped(temp_dir):
     """Malformed frontmatter should skip the skill and emit a warning."""
     repo_root = temp_dir / "repo"
-    skill_dir = repo_root / ".nano-claw" / "skills" / "broken"
+    skill_dir = repo_root / ".babyclaw" / "skills" / "broken"
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / "SKILL.md").write_text("---\nname: [broken\n---\n\nBody", encoding="utf-8")
 
@@ -57,7 +57,7 @@ def test_missing_required_fields_is_skipped(temp_dir):
     """Skills missing required frontmatter fields should be skipped."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "incomplete",
+        repo_root / ".babyclaw" / "skills" / "incomplete",
         "description: Missing name",
     )
 
@@ -71,7 +71,7 @@ def test_missing_required_fields_is_skipped(temp_dir):
 def test_resource_inventory_is_recursive(temp_dir):
     """Scripts, references, and assets should be inventoried recursively."""
     repo_root = temp_dir / "repo"
-    skill_dir = repo_root / ".nano-claw" / "skills" / "pdf"
+    skill_dir = repo_root / ".babyclaw" / "skills" / "pdf"
     write_skill(skill_dir, "name: pdf\ndescription: Handle PDFs")
     (skill_dir / "scripts" / "nested").mkdir(parents=True, exist_ok=True)
     (skill_dir / "scripts" / "nested" / "rotate.py").write_text("print('hi')", encoding="utf-8")
@@ -96,7 +96,7 @@ def test_repo_skill_overrides_user_skill(temp_dir):
     user_root = temp_dir / "user-skills"
     write_skill(user_root / "shared", "name: shared\ndescription: User version", "User body")
     repo_skill = write_skill(
-        repo_root / ".nano-claw" / "skills" / "shared",
+        repo_root / ".babyclaw" / "skills" / "shared",
         "name: shared\ndescription: Repo version",
         "Repo body",
     )
@@ -155,7 +155,7 @@ def test_repo_web_research_skill_is_discoverable_and_catalog_visible(temp_dir):
 def test_load_skill_tool_returns_formatted_payload(temp_dir):
     """load_skill should return the skill body and absolute resource paths."""
     repo_root = temp_dir / "repo"
-    skill_dir = repo_root / ".nano-claw" / "skills" / "pdf"
+    skill_dir = repo_root / ".babyclaw" / "skills" / "pdf"
     write_skill(skill_dir, "name: pdf\ndescription: Handle PDFs", "Prefer visual checks.")
     (skill_dir / "references").mkdir(parents=True, exist_ok=True)
     ref_file = skill_dir / "references" / "guide.md"
@@ -193,7 +193,7 @@ def test_list_catalog_skills_returns_repo_and_user_visible_skills(temp_dir):
     """The catalog should contain both repo-local and user-global skills."""
     repo_root = temp_dir / "repo"
     user_root = temp_dir / "user-skills"
-    write_skill(repo_root / ".nano-claw" / "skills" / "pdf", "name: pdf\ndescription: Handle PDFs")
+    write_skill(repo_root / ".babyclaw" / "skills" / "pdf", "name: pdf\ndescription: Handle PDFs")
     write_skill(user_root / "terraform", "name: terraform\ndescription: Handle Terraform")
 
     manager = SkillManager(repo_root=repo_root, user_root=user_root)
@@ -205,8 +205,8 @@ def test_list_catalog_skills_returns_repo_and_user_visible_skills(temp_dir):
 def test_extract_skill_mentions_parses_known_names_and_ignores_unknown(temp_dir):
     """Known $skill mentions should be extracted and deduplicated in order."""
     repo_root = temp_dir / "repo"
-    write_skill(repo_root / ".nano-claw" / "skills" / "pdf", "name: pdf\ndescription: Handle PDFs")
-    write_skill(repo_root / ".nano-claw" / "skills" / "terraform", "name: terraform\ndescription: Handle Terraform")
+    write_skill(repo_root / ".babyclaw" / "skills" / "pdf", "name: pdf\ndescription: Handle PDFs")
+    write_skill(repo_root / ".babyclaw" / "skills" / "terraform", "name: terraform\ndescription: Handle Terraform")
 
     manager = SkillManager(repo_root=repo_root, user_root=temp_dir / "user-skills")
     manager.discover()
@@ -221,12 +221,12 @@ def test_build_preload_messages_returns_assistant_tool_pairs(temp_dir):
     """Synthetic preload messages should match assistant/tool transcript structure."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "pdf",
+        repo_root / ".babyclaw" / "skills" / "pdf",
         "name: pdf\ndescription: Handle PDFs",
         "Prefer visual checks.",
     )
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "terraform",
+        repo_root / ".babyclaw" / "skills" / "terraform",
         "name: terraform\ndescription: Handle Terraform",
         "Run plan first.",
     )
@@ -252,7 +252,7 @@ def test_gated_skill_is_ineligible_when_runtime_requirements_are_missing(temp_di
     """macOS-gated skills should stay discoverable but hidden from the active catalog."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        repo_root / ".babyclaw" / "skills" / "macos-finder",
         (
             "name: macos-finder\n"
             "description: Finder helper\n"
@@ -291,7 +291,7 @@ def test_gated_skill_is_eligible_by_default_on_darwin(temp_dir, monkeypatch):
     monkeypatch.delenv("MACOS_TOOLS_ENABLE_FINDER", raising=False)
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-finder",
+        repo_root / ".babyclaw" / "skills" / "macos-finder",
         (
             "name: macos-finder\n"
             "description: Finder helper\n"
@@ -328,7 +328,7 @@ def test_load_skill_tool_returns_error_for_ineligible_skill(temp_dir):
     """load_skill should fail cleanly for skills gated off by runtime requirements."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-notes",
+        repo_root / ".babyclaw" / "skills" / "macos-notes",
         (
             "name: macos-notes\n"
             "description: Notes helper\n"
@@ -366,7 +366,7 @@ def test_messages_skill_is_eligible_by_default_on_darwin(temp_dir, monkeypatch):
     monkeypatch.delenv("MACOS_TOOLS_ENABLE_MESSAGES", raising=False)
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-messages",
+        repo_root / ".babyclaw" / "skills" / "macos-messages",
         (
             "name: macos-messages\n"
             "description: Messages helper\n"
@@ -401,7 +401,7 @@ def test_reminders_skill_is_ineligible_when_app_flag_is_disabled(temp_dir):
     """Per-app macOS skill gates should hide only the disabled app skill."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-reminders",
+        repo_root / ".babyclaw" / "skills" / "macos-reminders",
         (
             "name: macos-reminders\n"
             "description: Reminders helper\n"
@@ -436,7 +436,7 @@ def test_ineligible_skills_do_not_preload_from_explicit_mentions(temp_dir):
     """Explicit $skill mentions should ignore skills that are ineligible in this runtime."""
     repo_root = temp_dir / "repo"
     write_skill(
-        repo_root / ".nano-claw" / "skills" / "macos-calendar",
+        repo_root / ".babyclaw" / "skills" / "macos-calendar",
         (
             "name: macos-calendar\n"
             "description: Calendar helper\n"

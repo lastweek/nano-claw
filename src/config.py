@@ -1,4 +1,4 @@
-"""Centralized configuration for nano-claw."""
+"""Centralized configuration for BabyClaw."""
 
 import os
 from pathlib import Path
@@ -10,9 +10,9 @@ from src.database.connection import DEFAULT_HTTP_DATABASE_PATH
 from src.utils import env_truthy
 
 
-DEFAULT_SESSIONS_ROOT = "~/.nano-claw/sessions"
-TEST_MODE_ENV = "NANO_CODER_TEST"
-TEST_RUNTIME_ROOT_ENV = "NANO_CLAW_TEST_ROOT"
+DEFAULT_SESSIONS_ROOT = "~/.babyclaw/sessions"
+TEST_MODE_ENV = "BABYCLAW_TEST"
+TEST_RUNTIME_ROOT_ENV = "BABYCLAW_TEST_ROOT"
 
 
 class LLMConfig(BaseSettings):
@@ -162,7 +162,7 @@ class PlanConfig(BaseSettings):
     )
 
     enabled: bool = Field(default=True)
-    plan_dir: str = Field(default=".nano-claw/plans")
+    plan_dir: str = Field(default=".babyclaw/plans")
     allow_subagents: bool = Field(default=True)
 
 
@@ -270,8 +270,8 @@ class ExtensionsConfig(BaseSettings):
     )
 
     enabled: bool = Field(default=True)
-    user_root: str = Field(default="~/.nano-claw/extensions")
-    repo_root: str = Field(default=".nano-claw/extensions")
+    user_root: str = Field(default="~/.babyclaw/extensions")
+    repo_root: str = Field(default=".babyclaw/extensions")
     runner_timeout_seconds: int = Field(default=60, ge=1)
     install_timeout_seconds: int = Field(default=30, ge=1)
     catalogs: List[ExtensionCatalogConfig] = Field(default_factory=list)
@@ -504,8 +504,8 @@ class Config:
         if config_path:
             cls._config_path = Path(config_path)
 
-        # Skip loading config.yaml in test mode (when NANO_CODER_TEST is set)
-        is_test_mode = env_truthy("NANO_CODER_TEST")
+        # Skip loading config.yaml in test mode.
+        is_test_mode = env_truthy(TEST_MODE_ENV)
 
         if not is_test_mode and cls._config_path.exists():
             try:

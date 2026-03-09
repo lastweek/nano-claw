@@ -148,7 +148,7 @@ def add_turns(context: Context, count: int, *, size: int = 80) -> None:
 
 def build_manager(temp_dir, monkeypatch, *, context_window, min_recent_turns=6, llm=None):
     """Build a compaction manager with test-local config."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     cfg = Config.reload()
     cfg.llm.context_window = context_window
     cfg.context.auto_compact = True
@@ -182,7 +182,7 @@ def build_agent_with_logging(
     debug: bool = False,
 ):
     """Build a real agent with logging enabled for compaction history tests."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     if debug:
         monkeypatch.setenv("MEMORY_DEBUG", "1")
     else:
@@ -488,7 +488,7 @@ def test_manual_compaction_works_without_context_window(temp_dir, monkeypatch):
 
 def test_agent_run_auto_compacts_before_first_normal_call(temp_dir, monkeypatch):
     """Agent.run should compact before the first normal LLM request when threshold is exceeded."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     cfg = Config.reload()
     cfg.logging.enabled = False
     cfg.llm.context_window = 400
@@ -515,7 +515,7 @@ def test_agent_run_auto_compacts_before_first_normal_call(temp_dir, monkeypatch)
 
 def test_agent_run_stream_auto_compacts_before_streaming(temp_dir, monkeypatch):
     """Agent.run_stream should compact before the first streamed LLM request."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     cfg = Config.reload()
     cfg.logging.enabled = False
     cfg.llm.context_window = 400
@@ -537,7 +537,7 @@ def test_agent_run_stream_auto_compacts_before_streaming(temp_dir, monkeypatch):
 
 def test_agent_compaction_fallback_still_completes_and_turn_continues(temp_dir, monkeypatch):
     """Fallback handoffs should still let the turn proceed and emit a completed compaction event."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     cfg = Config.reload()
     cfg.logging.enabled = False
     cfg.llm.context_window = 400

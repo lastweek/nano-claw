@@ -121,20 +121,20 @@ def make_metrics(
 
 def test_print_banner_no_error():
     """Test that print_banner runs without errors."""
-    from src.main import NANO_CODER_WORDMARK, print_banner
+    from src.main import BABYCLAW_WORDMARK, print_banner
 
     console = make_recording_console()
     print_banner(console)
 
     rendered = normalize_output(console.export_text())
-    assert NANO_CODER_WORDMARK.splitlines()[0] in rendered
+    assert BABYCLAW_WORDMARK.splitlines()[0] in rendered
     assert "Minimalism Terminal Code Agent" in rendered
 
 
 def test_print_banner_with_context_window(monkeypatch):
     """Test banner displays with context_window set."""
     # Enable test mode
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
 
     # Set test values
     monkeypatch.setenv("LLM_PROVIDER", "test-provider")
@@ -157,7 +157,7 @@ def test_print_banner_with_context_window(monkeypatch):
 def test_print_banner_minimal_config(monkeypatch):
     """Test banner with minimal config."""
     # Enable test mode
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
 
     # Clear any existing LLM env vars
     for key in list(os.environ.keys()):
@@ -178,7 +178,7 @@ def test_print_banner_minimal_config(monkeypatch):
 
 def test_config_reload_is_silent(monkeypatch, capsys):
     """Config reload should not print directly during import/runtime loading."""
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     from src.config import Config
 
     Config.reload()
@@ -191,7 +191,7 @@ def test_load_runtime_config_prints_diagnostics_via_console(monkeypatch):
     """Bootstrap should surface config load diagnostics through the CLI console."""
     from src.main import load_runtime_config
 
-    monkeypatch.setenv("NANO_CODER_TEST", "true")
+    monkeypatch.setenv("BABYCLAW_TEST", "true")
     console = make_recording_console()
     runtime_config = load_runtime_config(console)
 
