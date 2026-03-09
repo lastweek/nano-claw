@@ -1,56 +1,231 @@
 # nano-claw
 
-nano-claw is a terminal-first coding agent for working directly inside an existing repository. It combines an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and per-session logs so you can see exactly what happened during each turn.
+<p align="center">
+  <img src="docs/babyclaw.png" alt="nano-claw mascot" width="400">
+</p>
 
-It is built for practical repo work rather than chat demos: inspect files, edit code, run commands, load focused instructions only when needed, hand off isolated subtasks, and keep long sessions usable with context compaction.
+nano-claw is a professional-grade AI coding agent that operates directly in your repository, combining an OpenAI-compatible LLM client with local tools, slash commands, skills, MCP integrations, delegated subagents, and comprehensive session logging. Built for real development work rather than chat demos, nano-claw enables file inspection, code editing, command execution, and long-running sessions with context compaction.
 
-It also includes a small localhost HTTP wrapper so you can drive the same repo-scoped runtime from a browser without adding auth, multi-user state, or remote deployment complexity.
+## Table of Contents
+
+- [Why nano-claw](#why-nano-claw)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Session Management](#session-management)
+- [Extension System](#extension-system)
+- [Documentation](#documentation)
+- [Development](#development)
+- [License](#license)
 
 ## Why nano-claw
 
-- Work where the code already is: your shell, your repo, your files
-- Keep the agent observable with a live activity feed and structured logs
-- Extend behavior with local skills and MCP servers instead of giant prompts
-- Delegate parallel subtasks without mixing child work into the main context
-- Stay productive in longer sessions with context inspection and compaction
+nano-claw is built on a philosophy of **terminal-first development** with these core principles:
 
-## What You Get
+### Work Where Your Code Is
+- Operate directly in your repository from the shell
+- No web UI required (though optional HTTP mode is available)
+- Full access to your files, commands, and development environment
+- Session logs stored alongside your code or in your home directory
 
-- Built-in tools for repo work, self-extension, and public-web reading: `read_file`, `write_file`, `run_command`, `load_skill`, `run_subagent`, `find_capabilities`, `request_capability`, `fetch_url`, `read_webpage`, and `extract_page_links`
-- Optional macOS helper tools for Finder, Calendar.app, and Notes.app when enabled
-- Streaming terminal UX with live activity updates while the model is thinking
-- Optional local HTTP/SSE server with a tiny browser UI for session-based turns
-- Slash commands for tools, skills, MCP servers, plans, subagents, and context usage
-- Local `SKILL.md` bundles with discovery, pinning, and on-demand loading
-- MCP support so external tools appear beside built-in tools
-- Subagents with isolated contexts, nested logs, and bounded concurrency
-- Per-session logging under `logs/` with human-readable and structured outputs
-- Planning workflow via `/plan`
-- Automatic and manual context compaction for long-running sessions
+### Observable and Auditable
+- Live activity feed shows exactly what the agent is doing
+- Structured per-session logging with full execution traces
+- Nested logs for delegated subagent tasks
+- Human-readable LLM logs and machine-readable event streams
 
-## Quickstart
+### Extensible Without Bloat
+- Local skills system for domain-specific expertise
+- MCP (Model Context Protocol) integrations for external tools
+- Runtime extensions that load without restart
+- Slash commands for workflow control
+- No hardcoded domain logic in the core agent
 
-### 1. Install
+### Built for Long Sessions
+- Context compaction keeps long-running sessions usable
+- Manual and automatic compaction strategies
+- Memory policies with structured handoff
+- Token usage tracking and budget estimation
+
+### Parallel Task Delegation
+- Subagents for isolated parallel work
+- Fresh contexts prevent pollution
+- Bounded concurrency prevents resource exhaustion
+- Nested session logs for complete traceability
+
+## Key Features
+
+### Core Capabilities
+
+**Repository Tools**
+- `read_file` - Inspect file contents with precise line ranges
+- `write_file` - Create or modify files with atomic writes
+- `run_command` - Execute shell commands with timeout control
+- `find_capabilities` - Discover available tools, skills, and extensions
+- `request_capability` - Record missing capabilities for session resolution
+
+**Self-Extension**
+- `load_skill` - Load domain expertise from skill bundles
+- `run_subagent` - Delegate isolated tasks to child agents
+- `refresh_runtime_capabilities` - Reload tools and extensions
+
+**Web Integration** (when enabled)
+- `fetch_url` - Fetch content from public URLs
+- `read_webpage` - Read and parse web pages
+- `extract_page_links` - Discover links from web pages
+
+**macOS Integration** (when enabled)
+- `finder_action` - Interact with Finder
+- `calendar_action` - Manage Calendar.app events
+- `notes_action` - Create and search Notes
+- `reminders_action` - Manage reminders
+- `messages_action` - Read recent messages
+
+### Workflow Features
+
+- **Slash Commands** - Control agent behavior and inspect state
+- **Skills System** - Load domain expertise on demand
+- **MCP Support** - Integrate external tool servers
+- **Subagents** - Parallel task delegation with isolation
+- **Context Compaction** - Keep long sessions within token limits
+- **Planning Mode** - Draft and apply structured plans
+- **Session Logging** - Complete execution traces per session
+- **HTTP Mode** - Optional browser-based interface
+
+## Architecture
+
+### ReAct Loop
+
+nano-claw implements a **ReAct (Reasoning + Acting)** loop that alternates between:
+
+1. **Thought**: The LLM reasons about the current state and next action
+2. **Action**: The LLM selects and invokes tools
+3. **Observation**: Tool results are fed back to the LLM
+4. **Iteration**: The loop continues until the task is complete
+
+```mermaid
+graph LR
+    A[User Input] --> B[System + Context]
+    B --> C[LLM]
+    C --> D{Thought}
+    D --> E[Tool Call]
+    E --> F[Tool Result]
+    F --> G[Observation]
+    G --> C
+    D --> H[Final Answer]
+    H --> I[User Output]
+```
+
+### Component Architecture
+
+```mermaid
+graph TB
+    subgraph "CLI Interface"
+        CLI[Slash Commands]
+        INPUT[User Input]
+    end
+
+    subgraph "Agent Core"
+        AGENT[Agent]
+        CONTEXT[Context]
+        LOGGER[SessionLogger]
+    end
+
+    subgraph "Tool System"
+        REG[ToolRegistry]
+        BUILTIN[Built-in Tools]
+        MCP[MCP Tools]
+        EXT[Extension Tools]
+    end
+
+    subgraph "Extension Systems"
+        SKILLS[SkillManager]
+        SUB[SubagentManager]
+        MEM[MemoryManager]
+    end
+
+    subgraph "LLM Client"
+        LLM[LLM Client]
+        PROVIDER[Provider]
+    end
+
+    INPUT --> CLI
+    CLI --> AGENT
+    AGENT --> CONTEXT
+    AGENT --> LOGGER
+    AGENT --> REG
+    REG --> BUILTIN
+    REG --> MCP
+    REG --> EXT
+    AGENT --> SKILLS
+    AGENT --> SUB
+    AGENT --> MEM
+    AGENT --> LLM
+    LLM --> PROVIDER
+
+    style AGENT fill:#e1f5ff
+    style REG fill:#fff4e1
+    style SKILLS fill:#f0e1ff
+```
+
+### Session Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Agent
+    participant T as Tools
+    participant L as LLM
+    participant S as Logger
+
+    U->>A: Input task
+    A->>S: Log turn start
+    A->>L: Send context + task
+    L->>A: Request tool call
+    A->>T: Execute tool
+    T->>A: Return result
+    A->>L: Send observation
+    L->>A: Final answer
+    A->>S: Log turn complete
+    A->>U: Return result
+```
+
+## Quick Start
+
+### Installation
 
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/nano-claw.git
+cd nano-claw
+
+# Create virtual environment
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Optional: Install dev dependencies for testing
+pip install -r requirements-dev.txt
+
+# Configure git hooks for secret detection
 git config core.hooksPath .githooks
 ```
 
-The git hook path enables the local secret guard so obvious credentials do not get committed by accident.
+### Configuration
 
-### 2. Configure
+Create your configuration files:
 
 ```bash
+# Copy example configurations
 cp config.yaml.example config.yaml
 cp .env.example .env
 ```
 
-`config.yaml` is the main project config. Use `.env` for secrets and machine-local overrides. Environment variables override values from `config.yaml`.
-
-Minimal OpenAI-compatible configuration:
+**Minimal `config.yaml` for OpenAI-compatible APIs:**
 
 ```yaml
 llm:
@@ -58,154 +233,148 @@ llm:
   model: your-model-name
   base_url: https://api.example.com/v1
   api_key: your-api-key
+
+agent:
+  max_iterations: 10
+
+ui:
+  enable_streaming: true
+
+logging:
+  enabled: true
 ```
 
-You can also use `openai`, `azure`, or `ollama` provider modes.
+**Using environment variables** (overrides `config.yaml`):
 
-### 3. Run
+```bash
+export LLM_PROVIDER=custom
+export LLM_MODEL=your-model-name
+export LLM_BASE_URL=https://api.example.com/v1
+export LLM_API_KEY=your-api-key
+```
 
+**Provider examples:**
+
+```yaml
+# OpenAI
+llm:
+  provider: openai
+  model: gpt-4
+  api_key: ${OPENAI_API_KEY}  # From environment
+
+# Azure OpenAI
+llm:
+  provider: azure
+  model: gpt-4
+  api_key: ${AZURE_API_KEY}
+  api_base: https://your-resource.openai.azure.com
+  api_version: 2023-05-15
+
+# Ollama (local)
+llm:
+  provider: ollama
+  model: codellama
+  base_url: http://localhost:11434
+```
+
+### Running nano-claw
+
+**CLI Mode:**
 ```bash
 python -m src.main
 ```
 
-Alternative entrypoint:
-
-```bash
-python src/main.py
-```
-
-Start the local HTTP wrapper instead:
-
+**HTTP Server Mode:**
 ```bash
 python -m src.main serve
 ```
 
-`serve` prints the local access points on startup, including:
+HTTP mode provides:
+- Chat UI: `http://127.0.0.1:8765/`
+- Admin Console: `http://127.0.0.1:8765/admin`
+- Health Check: `http://127.0.0.1:8765/api/v1/health`
 
-- chat UI: `http://127.0.0.1:8765/`
-- admin UI: `http://127.0.0.1:8765/admin`
-- health: `http://127.0.0.1:8765/api/v1/health`
-
-If you bind HTTP mode to a non-loopback host, nano-claw prints a warning because the chat and admin surfaces have no auth in v1.
-
-## What It Looks Like
-
-```text
-You > explain how the logging system works
-
-Agent >
-  • LLM call 1 requested 2 tools
-  • Tool finished: run_command(cmd='rg "SessionLogger" -n src') (0.03s)
-  • Tool finished: read_file(file_path='src/logger.py') (0.00s)
-  • LLM call 2 produced final answer
-
-nano-claw writes one session directory per CLI run, with session.json for
-metadata, llm.log for the execution timeline, and events.jsonl for structured
-events.
-
-1234 prompt tokens • 87 completion tokens • 2.14s • TTFT 0.61s • glm-5 (custom)
-```
-
-## Core Ideas
-
-### Tools
-
-nano-claw uses the same tool-calling loop for built-in tools and MCP-provided tools. The default repo-workflow set covers reading files, writing files, running shell commands, loading skills, delegating child tasks, and reading public webpages.
-
-### Skills
-
-Skills are local instruction bundles stored in `SKILL.md`. nano-claw keeps a compact skill catalog in context and loads full skill bodies only when they are pinned, explicitly requested with `$skill-name`, or loaded through the `load_skill` tool.
-
-Skills can also declare runtime requirements in frontmatter. For example, repo-local macOS skills can require `darwin` plus `macos_tools.*` config flags, which keeps them visible in `/skill` while hiding them from the prompt catalog unless the local helper is actually available or has been explicitly disabled.
-
-Discovery roots:
-
-- `.nano-claw/skills`
-- `~/.nano-claw/skills`
-
-### MCP
-
-MCP servers are configured in `config.yaml` and initialized at startup. Their tools are registered into the same tool system as built-in tools, so the model can use them through the same request loop and you can inspect them with `/mcp`.
-
-The intended internet workflow is hybrid: core handles URL fetching and page reading, while search providers come from MCP. That keeps the core small and lets you swap search backends without changing nano-claw itself.
-
-### Live Self-Extension
-
-When the current session is missing a tool or skill, the agent can inspect available capabilities and raise a structured request instead of guessing. The intended workflow is:
-
-- `find_capabilities` to search active tools, loadable skills, on-disk extension bundles that need reload, and installable extension catalog packages
-- `request_capability` to record the missing capability for the current session
-- user action such as `/extension install <catalog>:<package>` or `/runtime reload`
-- `refresh_runtime_capabilities` or `/runtime reload` so the session picks up the new capability
-
-### Subagents
-
-Subagents let the main agent delegate isolated repo tasks to fresh child agents. They do not inherit the full conversation history, they write nested logs, and they run with bounded parallelism.
-
-### Context Compaction
-
-Long sessions can compact older turns into a rolling summary while keeping recent turns in raw form. You can inspect the current estimate with `/context` and manage compaction with `/compact`.
-
-### Logging
-
-Every CLI or HTTP session gets a readable session directory under `~/.nano-claw/sessions/` by default:
-
-- `session.json` for session metadata and aggregate counts
-- `llm.log` for the full human-readable execution timeline
-- `events.jsonl` for the structured event stream
-- `artifacts/` for spilled large payloads
-- `MEMORY.md` for curated session memory
-- `daily/` for append-only daily memory notes
-- `memory-settings.json` and `memory-audit.jsonl` for memory controls and audit events
-- `subagents/` for nested child-agent logs
-
-Convenience symlinks are also maintained at `~/.nano-claw/sessions/latest-session` and `~/.nano-claw/sessions/latest.log`.
-
-## Common Commands
-
-- `/help` to list commands
-- `/capability` to inspect, dismiss, and resolve missing-capability requests
-- `/tool` to inspect available tools
-- `/skill` to list, pin, clear, inspect, and reload skills
-- `/mcp` to inspect configured MCP servers and tools
-- `/context` to estimate the next-call baseline context payload
-- `/compact` to inspect or trigger compaction behavior
-- `/subagent` to inspect or run delegated child tasks
-- `/plan` to enter planning mode, draft a plan, and apply it
-
-Each command also supports built-in help such as `/command help`, `/command --help`, and `/command -h`.
+**Note:** HTTP mode has no authentication in v1 and is designed for local use only.
 
 ## Configuration
 
-nano-claw uses three configuration sources:
+### Configuration Priority
 
-- `config.yaml` for primary local configuration
-- `.env` for secrets and machine-local values
-- environment variables for explicit overrides
+Configuration is loaded in this order (later sources override earlier ones):
 
-Useful settings to know early:
+1. `config.yaml` - Base configuration
+2. `.env` - Secrets and machine-specific values
+3. Environment variables - Runtime overrides
 
-- `ui.enable_streaming`
-- `agent.max_iterations`
-- `server.host`
-- `server.port`
-- `server.db_path`
-- `logging.enabled`
-- `logging.async_mode`
-- `logging.log_dir`
-- `subagents.max_parallel`
-- `subagents.max_per_turn`
-- `context.auto_compact`
-- `plan.enabled`
-- `macos_tools.enabled`
-- `web_tools.enabled`
-- `extensions.enabled`
+### Key Configuration Sections
 
-`logging.async_mode` routes session-log writes through a background transport while keeping the same on-disk log format. `subagents.max_parallel` caps concurrent child-agent threads independently from the per-turn delegation limit.
-By default, `server.db_path` points to `~/.nano-claw/state.db`.
-By default, `logging.log_dir` points to `~/.nano-claw/sessions`, and each session keeps its logs and memory files inside the same per-session directory.
+#### LLM Configuration
 
-Example macOS helper config:
+```yaml
+llm:
+  provider: custom          # openai, azure, ollama, custom
+  model: gpt-4
+  base_url: https://api.openai.com/v1
+  api_key: ${OPENAI_API_KEY}
+  temperature: 0.0
+  max_tokens: 4096
+```
+
+#### Agent Behavior
+
+```yaml
+agent:
+  max_iterations: 10        # Maximum ReAct loop iterations
+  timeout_seconds: 120      # Per-iteration timeout
+```
+
+#### UI Settings
+
+```yaml
+ui:
+  enable_streaming: true    # Show live activity feed
+  show_thinking: true       # Display internal reasoning
+```
+
+#### Server Settings
+
+```yaml
+server:
+  host: 127.0.0.1           # Bind address (HTTP mode)
+  port: 8765                # Port (HTTP mode)
+  db_path: ~/.nano-claw/state.db  # SQLite database path
+```
+
+#### Logging
+
+```yaml
+logging:
+  enabled: true
+  async_mode: true          # Background log writes
+  log_dir: ~/.nano-claw/sessions  # Session log directory
+```
+
+#### Subagents
+
+```yaml
+subagents:
+  enabled: true
+  max_parallel: 3           # Concurrent child agents
+  max_per_turn: 6           # Max per parent turn
+  default_timeout_seconds: 180
+```
+
+#### Context Compaction
+
+```yaml
+context:
+  auto_compact:
+    enabled: true
+    target_ratio: 0.8       # Compact at 80% of context window
+    min Turns_to_keep: 3    # Keep recent turns in raw form
+```
+
+#### macOS Tools
 
 ```yaml
 macos_tools:
@@ -218,9 +387,7 @@ macos_tools:
   enable_messages: true
 ```
 
-On macOS, nano-claw enables bounded `finder_action`, `calendar_action`, `notes_action`, `reminders_action`, and `messages_action` tools by default. Set `macos_tools.enabled: false` to opt out. Unsupported platforms skip these tools at startup and report the platform reason in `TOOL_DEBUG=1` output. The first run on macOS may require granting Automation access in macOS System Settings. `messages_action.read_recent_messages` is best-effort because some chat objects do not expose readable history through the Messages scripting surface.
-
-Example public-web tool config:
+#### Web Tools
 
 ```yaml
 web_tools:
@@ -228,15 +395,13 @@ web_tools:
   timeout_seconds: 15
   max_response_bytes: 2000000
   max_content_chars: 20000
-  allow_private_networks: false
+  allow_private_networks: false  # Only public HTTP/HTTPS
   enable_fetch_url: true
   enable_read_webpage: true
   enable_extract_page_links: true
 ```
 
-`fetch_url`, `read_webpage`, and `extract_page_links` are enabled by default in normal build sessions, build subagents, and main planning sessions. They only allow public `http` and `https` targets unless `web_tools.allow_private_networks` is set to `true`. Search is not built into core; add an MCP search provider and use that to find URLs before reading them with the built-in web tools.
-
-Example runtime extension config:
+#### Extensions
 
 ```yaml
 extensions:
@@ -245,14 +410,10 @@ extensions:
   repo_root: .nano-claw/extensions
   runner_timeout_seconds: 60
   install_timeout_seconds: 30
-  catalogs: []
+  catalogs: []  # Remote extension catalogs
 ```
 
-`extensions.enabled` turns on live-discoverable out-of-process tool bundles under the repo-local and user-global extension roots. Add new bundles, then run `/runtime reload`, `/extension reload`, or `refresh_runtime_capabilities` to activate them without restarting the process. Curated remote installs are explicit-user actions through `/extension install <catalog>:<package>` or `POST /api/v1/admin/extensions/install`; search/install approval is not delegated to normal tool calls.
-
-If the agent discovers it needs a capability that is not active yet, it should use `find_capabilities` and `request_capability` instead of inventing tool names. Exact catalog matches should be reported with the concrete `/extension install ...` and `/runtime reload` steps.
-
-Example MCP config:
+#### MCP Integration
 
 ```yaml
 mcp:
@@ -263,114 +424,538 @@ mcp:
       timeout: 30
 ```
 
-See [config.yaml.example](config.yaml.example) for the full example file.
+### Environment Variables
 
-## HTTP Mode
+Commonly used environment variables:
 
-The optional HTTP wrapper is intentionally local and minimal:
+```bash
+# LLM Configuration
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4
+LLM_API_KEY=sk-...
 
-- One daemon process started inside one repo
-- One machine-global SQLite database for persisted sessions and turns
-- One long-running main `Agent` per active session
-- One dedicated worker thread per session runtime
-- No auth, approvals, or multi-user features
-- SSE streaming for live output and turn status
-- Tiny static UI served from the same process
+# Server
+SERVER_HOST=127.0.0.1
+SERVER_PORT=8765
 
-By default the HTTP runtime stores state in `~/.nano-claw/state.db`, shared across repos on the same machine. On first startup with the default paths, nano-claw also moves an existing repo-local `.nano-claw/state.db`, `logs/`, and `.nano-claw/memory/` there when the corresponding global targets are still empty.
+# Subagents
+SUBAGENTS_ENABLED=true
+SUBAGENTS_MAX_PARALLEL=3
+SUBAGENTS_MAX_PER_TURN=6
 
-Key endpoints:
+# Logging
+LOGGING_ENABLED=true
+LOGGING_ASYNC_MODE=true
+LOGGING_LOG_DIR=~/.nano-claw/sessions
+```
 
-- `GET /api/v1/health`
-- `GET /api/v1/sessions`
-- `POST /api/v1/sessions`
-- `GET /api/v1/sessions/{session_id}`
-- `DELETE /api/v1/sessions/{session_id}`
-- `POST /api/v1/sessions/{session_id}/runtime/reload`
-- `GET /api/v1/sessions/{session_id}/capability-requests`
-- `POST /api/v1/sessions/{session_id}/capability-requests/{request_id}/dismiss`
-- `POST /api/v1/sessions/{session_id}/capability-requests/{request_id}/resolve`
-- `POST /api/v1/sessions/{session_id}/turns`
-- `GET /api/v1/turns/{turn_id}`
-- `GET /api/v1/turns/{turn_id}/stream`
+## Usage
 
-## Admin Console
+### Basic Interaction
 
-nano-claw now includes a Kubernetes-style read-only admin console:
+```bash
+$ nano-claw
 
-- UI: `GET /admin`
-- static assets: `GET /admin/static/*`
-- API base: `/api/v1/admin/*`
+You > Read the README file and summarize it
 
-Primary admin resources:
+Agent >
+  • LLM call 1 requested 1 tool
+  • Tool finished: read_file(file_path='README.md') (0.02s)
+  • LLM call 2 produced final answer
 
-- `ServerOverview`
-- `Session` / `SessionList`
-- `SessionRuntime` / `SessionRuntimeList`
-- `Turn` / `TurnList`
-- `EventBusState`
-- `AgentRuntime`
-- `ToolRegistryState`
-- `SkillCatalogState`
-- `MCPServerState`
-- `ExtensionBundle`
-- `SubagentRun`
-- `LogSession`
-- `LogFile`
-- `ConfigView`
+This project is a terminal-first AI coding agent...
+[Full summary]
 
-Admin stream endpoint:
+1234 prompt tokens • 234 completion tokens • 1.23s • TTFT 0.45s • gpt-4 (openai)
+```
 
-- `GET /api/v1/admin/stream?resources=<csv>&session_id=<optional>&interval_ms=<optional>`
-- SSE event names: `snapshot`, `resource_changed`, `heartbeat`, `error`
+### Slash Commands
 
-Operational note:
+Control agent behavior with slash commands:
 
-- For long-running admin streams, monitor server file descriptors with `lsof -p <pid> | wc -l`; the count should stay stable rather than climb over time.
+**Help and Information**
+- `/help` - List all available commands
+- `/tool` - Inspect available tools
+- `/skill` - List, pin, and manage skills
+- `/mcp` - Inspect MCP servers and tools
+- `/context` - Show context usage and token estimates
+- `/subagent` - Inspect subagent runs
 
-The admin UI is session-centric rather than flat-resource-centric:
+**Skills Management**
+- `/skill` - List all discovered skills
+- `/skill use <name>` - Pin a skill for the session
+- `/skill clear <name|all>` - Unpin skills
+- `/skill show <name>` - Inspect a skill
+- `/skill reload` - Rescan skill directories
 
-- the left rail keeps global roots such as Overview, Sessions, Global Turns, Event Bus, and Config
-- the main tree lets you expand a session into Context, Runtime, Agent, Skills, Tools, MCP, Subagents, Turns, and Logs
-- the detail pane stays read-only with Summary, Related, and Raw JSON tabs
+**Capabilities and Extensions**
+- `/capability` - Manage missing capability requests
+- `/runtime reload` - Reload tools and extensions
 
-Read-only and safety guarantees:
+**Planning**
+- `/plan` - Enter planning mode
+- `/plan apply` - Apply current plan
 
-- Admin endpoints are `GET` only.
-- Prompt/output/log payloads are redacted and preview-truncated by default.
-- Raw log bytes require explicit `log-files/download`.
-- Log file access is constrained to the configured log root.
+**Context Management**
+- `/context` - Show detailed context usage
+- `/compact` - Trigger context compaction
+- `/memory` - Manage session memory
+
+### Using Skills
+
+Skills are domain-specific knowledge bundles that can be loaded on demand:
+
+**Explicit Mention:**
+```bash
+You > $pdf extract tables from report.pdf
+```
+
+**Pinned Skills:**
+```bash
+You > /skill use pdf
+Pinned skill: pdf
+
+You > Extract tables from report.pdf
+# PDF skill is automatically loaded
+```
+
+**Skill Discovery:**
+```bash
+You > /skill
+
+Available Skills (5)
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+┃ Skill                ┃ Description                     ┃ Source   ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+│ pdf                  │ PDF workflows                   │ repo     │
+│ terraform            │ Infrastructure as Code         │ user     │
+│ kubernetes           │ Kubernetes deployments          │ repo     │
+...
+```
+
+### Subagents
+
+Delegate isolated tasks to child agents:
+
+```bash
+You > Analyze the authentication system and database layer in parallel
+
+Agent >
+  • LLM call 1 requested 1 tool
+  • Tool finished: run_subagent(2 requests) (15.3s)
+    ├─ subagent-001: auth-analysis completed (7.2s)
+    └─ subagent-002: db-analysis completed (8.1s)
+  • LLM call 2 produced final answer
+
+Authentication analysis: [...]
+Database analysis: [...]
+```
+
+### Context Management
+
+Monitor and manage your session context:
+
+```bash
+You > /context
+
+Context Usage
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+System Prompt:     1,234 tokens
+History:          12,456 tokens
+Skills:             1,890 tokens
+─────────────────────────────────────────────────────
+Estimated Total:  15,580 tokens
+─────────────────────────────────────────────────────
+Context Window:   128,000 tokens
+Usage:             12.2%
+
+Recent Turns (5)
+┏━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃ # ┃ Type                       ┃ Tokens  ┃
+┡━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ 1 │ user                       │ 234     │
+│ 2 │ assistant (2 tools)        │ 1,567   │
+...
+```
+
+## Session Management
+
+### Session Logging
+
+Every CLI or HTTP session creates a comprehensive log directory:
+
+```
+~/.nano-claw/sessions/
+  latest-session -> 2026-03-09-task-sess_abc123def456/
+  2026-03-09-task-sess_abc123def456/
+    session.json              # Session metadata
+    llm.log                   # Human-readable execution timeline
+    events.jsonl              # Structured event stream
+    artifacts/                # Large payloads
+    MEMORY.md                 # Curated session memory
+    daily/                    # Append-only daily notes
+    memory-settings.json      # Memory policies
+    memory-audit.jsonl        # Memory operations log
+    subagents/                # Child agent sessions
+      subagent-research-001-sa_0001/
+        session.json
+        llm.log
+        events.jsonl
+```
+
+### Log Files
+
+**session.json**
+```json
+{
+  "session_id": "sess_abc123def456",
+  "session_kind": "main",
+  "start_time": "2026-03-09T10:30:00Z",
+  "end_time": "2026-03-09T10:35:23Z",
+  "status": "completed",
+  "cwd": "/path/to/repo",
+  "llm_call_count": 12,
+  "tool_call_count": 23,
+  "total_duration_seconds": 323.5,
+  "provider": "openai",
+  "model": "gpt-4"
+}
+```
+
+**llm.log** - Human-readable trace:
+```
+[2026-03-09 10:30:01] Turn 1 started
+[2026-03-09 10:30:01] LLM call 1: 1234 prompt tokens, 0 completion tokens
+[2026-03-09 10:30:02] Tool requested: read_file(file_path='README.md')
+[2026-03-09 10:30:02] Tool finished: read_file (0.02s)
+[2026-03-09 10:30:03] LLM call 2: 1456 prompt tokens, 234 completion tokens
+[2026-03-09 10:30:03] Turn 1 completed: 2.34s
+```
+
+**events.jsonl** - Machine-readable event stream:
+```json
+{"kind":"turn_started","timestamp":"2026-03-09T10:30:01Z","details":{"turn_id":1,"user_message":"..."}}
+{"kind":"llm_call_started","timestamp":"2026-03-09T10:30:01Z","details":{"call_id":1,"prompt_tokens":1234}}
+{"kind":"tool_call","timestamp":"2026-03-09T10:30:02Z","details":{"tool":"read_file","file_path":"README.md"}}
+...
+```
+
+### HTTP Mode Sessions
+
+HTTP mode provides persistent sessions with SQLite backing:
+
+```bash
+# Create a session
+curl -X POST http://127.0.0.1:8765/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"title": "My Session"}'
+
+# Submit a turn
+curl -X POST http://127.0.0.1:8765/api/v1/sessions/{session_id}/turns \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Read the README"}'
+
+# Stream results
+curl -N http://127.0.0.1:8765/api/v1/turns/{turn_id}/stream
+```
+
+### Admin Console
+
+The admin console provides Kubernetes-style introspection:
+
+- **Server Overview** - System status and statistics
+- **Sessions** - Browse and inspect sessions
+- **Runtimes** - View active session runtimes
+- **Turns** - Inspect turn history
+- **Event Bus** - Monitor SSE streaming state
+- **Agent Runtimes** - Detailed agent state
+- **Tools** - View tool registry
+- **Skills** - Skill catalog and status
+- **MCP** - MCP server status
+- **Subagents** - Subagent run history
+- **Logs** - Browse and download session logs
+
+Access at: `http://127.0.0.1:8765/admin`
+
+## Extension System
+
+nano-claw provides multiple extension mechanisms:
+
+### Skills
+
+Domain-specific instruction bundles stored in `SKILL.md` files:
+
+**Discovery Roots:**
+- Repository: `.nano-claw/skills/`
+- User: `~/.nano-claw/skills/`
+
+**Skill Structure:**
+```
+.nano-claw/skills/
+└── pdf/
+    ├── SKILL.md              # Required: skill definition
+    ├── scripts/              # Optional: executable scripts
+    ├── references/           # Optional: documentation
+    └── assets/               # Optional: resources
+```
+
+**SKILL.md Format:**
+```markdown
+---
+name: pdf
+description: PDF workflows with visual verification
+metadata:
+  short-description: PDF workflows
+---
+
+# PDF Processing Guidelines
+
+When working with PDFs:
+1. Use visual checks over text extraction
+2. Handle multi-page documents carefully
+...
+```
+
+### MCP Integrations
+
+Connect external tool servers via the Model Context Protocol:
+
+```yaml
+mcp:
+  servers:
+    - name: filesystem
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"]
+      enabled: true
+
+    - name: deepwiki
+      url: https://mcp.deepwiki.com/mcp
+      enabled: true
+```
+
+MCP tools appear alongside built-in tools and can be inspected with `/mcp`.
+
+### Runtime Extensions
+
+Out-of-process tool bundles that load without restart:
+
+**Extension Roots:**
+- Repository: `.nano-claw/extensions/`
+- User: `~/.nano-claw/extensions/`
+
+**Loading Extensions:**
+```bash
+# Reload runtime to pick up new extensions
+/runtime reload
+
+# Or use the dedicated command
+/extension reload
+
+# Install from catalog
+/extension install <catalog>:<package>
+```
+
+Extensions can include:
+- Additional tools
+- Skill bundles
+- MCP server configurations
+- Custom commands
 
 ## Documentation
 
-The front page stays focused on setup and concepts. Deeper implementation details live in `docs/`:
+Deep-dive technical documentation is available in the `docs/` directory:
 
-- [docs/design-overview.md](docs/design-overview.md) for architecture and the main ReAct loop
-- [docs/subagents.md](docs/subagents.md) for delegated child-agent execution
-- [docs/skills.md](docs/skills.md) for skill discovery and loading
-- [docs/context-compaction.md](docs/context-compaction.md) for compaction strategy and lifecycle
+### Core Architecture
+- **[docs/design-overview.md](docs/design-overview.md)** - Complete architecture overview, ReAct loop implementation, and system design
+
+### Extension Systems
+- **[docs/skills.md](docs/skills.md)** - Skill system architecture, bundle format, discovery, and loading mechanisms
+- **[docs/subagents.md](docs/subagents.md)** - Subagent runtime, parallel task delegation, and isolation model
+
+### Session Management
+- **[docs/context-compaction.md](docs/context-compaction.md)** - Context compaction strategies, token management, and long-running sessions
+- **[docs/memory.md](docs/memory.md)** - Memory policies, structured handoff, and session persistence
+
+### HTTP Server
+- **[docs/http-design.md](docs/http-design.md)** (in design-overview.md) - HTTP mode architecture, session management, and API reference
 
 ## Development
 
-Install dev dependencies and run tests:
+### Project Structure
+
+```
+nano-claw/
+├── src/
+│   ├── agent.py              # Main agent orchestration
+│   ├── context.py            # Session context management
+│   ├── logger.py             # Session logging
+│   ├── llm_client.py         # LLM API client
+│   ├── config.py             # Configuration management
+│   ├── tools/                # Built-in tool implementations
+│   ├── commands/             # Slash command implementations
+│   ├── server/               # HTTP mode and API
+│   └── subagents.py          # Subagent runtime
+├── tests/                    # Pytest test suite
+├── docs/                     # Technical documentation
+├── .githooks/                # Git hooks for secret detection
+├── config.yaml.example       # Example configuration
+├── .env.example              # Example environment variables
+├── requirements.txt          # Runtime dependencies
+├── requirements-dev.txt      # Development dependencies
+└── CLAUDE.md                 # Development guidelines
+```
+
+### Running Tests
 
 ```bash
+# Install dev dependencies
 pip install -r requirements-dev.txt
+
+# Run all tests
 pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+
+# Run specific test file
+pytest tests/test_agent.py
+
+# Run with verbose output
+pytest -v
+
+# Run specific test
+pytest tests/test_agent.py::test_agent_run_stream
 ```
 
-Useful directories:
+### Adding New Tools
 
-```text
-src/                core CLI, agent, config, logging, commands, and built-in tools
-src/tools/          built-in tool implementations
-src/commands/       slash command implementations
-tests/              pytest suite
-docs/               technical documentation
-.githooks/          local secret guard hooks
-.nano-claw/skills/ optional repo-local skills
+1. Create a new tool class in `src/tools/`:
+
+```python
+from tools.base_tool import BaseTool, ToolResult
+
+class MyTool(BaseTool):
+    name = "my_tool"
+    description = "Does something useful"
+
+    parameters = {
+        "param1": {"type": "string", "description": "First parameter"},
+        "param2": {"type": "integer", "description": "Second parameter"}
+    }
+
+    def execute(self, **kwargs) -> ToolResult:
+        # Implement tool logic
+        return ToolResult(success=True, output="Result")
 ```
+
+2. Register the tool in `src/main.py`
+3. Add tests in `tests/test_my_tool.py`
+4. Update documentation
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Use type hints for function signatures
+- Add docstrings to classes and public methods
+- Keep functions focused and small
+- Write tests for all new features
+
+### Git Workflow
+
+```bash
+# Configure git hooks for secret detection
+git config core.hooksPath .githooks
+
+# Now git will check for obvious credentials before commit
+git commit -m "Add new feature"
+```
+
+## Best Practices
+
+### Session Management
+
+- **Start fresh sessions** for distinct tasks
+- **Use `/compact`** when context grows large
+- **Pin skills** (`/skill use`) for multi-turn workflows
+- **Check `/context`** periodically to monitor token usage
+- **Review logs** in `~/.nano-claw/sessions/latest-session/`
+
+### Task Design
+
+- **Be specific** in your requests
+- **Provide context** about what you're trying to achieve
+- **Use subagents** for parallel independent tasks
+- **Break large tasks** into smaller steps
+- **Use `/plan`** for complex multi-step workflows
+
+### Skill Authoring
+
+- **Keep skills focused** on specific domains
+- **Use clear, actionable instructions**
+- **Include examples** in skill body
+- **Reference external docs** from `references/`
+- **Test skills** with `/skill show` before use
+
+### Extension Development
+
+- **Follow tool interface** for consistency
+- **Handle errors gracefully** with clear messages
+- **Log operations** for observability
+- **Test with `/runtime reload`** for hot-reloading
+- **Document capabilities** clearly
+
+## Troubleshooting
+
+### Common Issues
+
+**LLM API Errors:**
+- Verify `LLM_API_KEY` is set correctly
+- Check `config.yaml` provider settings
+- Ensure `base_url` is accessible
+- Review rate limits for your provider
+
+**Context Overflow:**
+- Use `/compact` to summarize older turns
+- Enable `context.auto_compact` in config
+- Clear pinned skills with `/skill clear all`
+- Start a fresh session for new tasks
+
+**Tool Failures:**
+- Check tool-specific error messages
+- Verify file paths and permissions
+- Ensure required dependencies are installed
+- Review session logs for details
+
+**Extension Loading:**
+- Run `/runtime reload` after adding extensions
+- Check extension syntax and structure
+- Verify required fields in `SKILL.md`
+- Review logs for parse errors
+
+### Getting Help
+
+- Review logs in `~/.nano-claw/sessions/latest-session/llm.log`
+- Use `/help` for command reference
+- Check `/tool`, `/skill`, `/mcp` for available resources
+- Inspect `/context` for session state
+- Browse admin console in HTTP mode
 
 ## License
 
-MIT
+MIT License - see LICENSE file for details
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+See `CLAUDE.md` for development guidelines.
+
+---
+
+**nano-claw** - Professional AI assistance, right in your terminal.
